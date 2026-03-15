@@ -1,9 +1,17 @@
-const { app, BrowserWindow, ipcMain, net, clipboard } = require("electron");
+const { app, BrowserWindow, ipcMain, net, clipboard, session } = require("electron");
 const path = require("path");
 
 let win;
 
 const DASHBOARD_URL = "https://cto.hxrra.com/api/public/dashboard";
+const STATION_TWO_BASE_URL = "https://api.yescode.cloud";
+const STATION_TWO_LOGIN_URL = `${STATION_TWO_BASE_URL}/api/v1/auth/login`;
+const STATION_TWO_REFRESH_URL = `${STATION_TWO_BASE_URL}/api/v1/auth/refresh`;
+const STATION_TWO_ACTIVE_URL = `${STATION_TWO_BASE_URL}/api/v1/subscriptions/active`;
+const STATION_TWO_SESSION_PARTITION = "persist:key-dashboard-station-two";
+const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
+const STATION_TWO_TIMEOUT_MS = 20000;
+const TOKEN_REFRESH_BUFFER_MS = 120000;
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 const DASHBOARD_RANGE = "day";
 const DEFAULT_CONSUMPTION_PAGE = 1;
@@ -19,6 +27,16 @@ const RETRYABLE_ERROR_CODES = new Set([
   "ERR_NETWORK_CHANGED",
   "ERR_INTERNET_DISCONNECTED"
 ]);
+const stationTwoState = {
+  email: "",
+  password: "",
+  proxyUrl: STATION_TWO_DEFAULT_PROXY,
+  accessToken: "",
+  refreshToken: "",
+  expiresAt: 0,
+  refreshSupported: null
+};
+let stationTwoProxyConfigured = null;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -180,6 +198,415 @@ async function fetchDashboardWithRetry(authorization, options = {}) {
   throw toUserFacingError(lastError);
 }
 
+function normalizeStationTwoProxy(proxyUrl) {
+  if (typeof proxyUrl !== "string") {
+    return stationTwoState.proxyUrl || STATION_TWO_DEFAULT_PROXY;
+  }
+
+  const trimmed = proxyUrl.trim();
+  return trimmed || "";
+}
+
+function getStationTwoSessionPartition() {
+  return session.fromPartition(STATION_TWO_SESSION_PARTITION, { cache: true });
+}
+
+async function ensureStationTwoProxy(proxyUrl) {
+  const normalizedProxy = normalizeStationTwoProxy(proxyUrl);
+  const targetSession = getStationTwoSessionPartition();
+
+  if (stationTwoProxyConfigured === normalizedProxy) {
+    return targetSession;
+  }
+
+  if (normalizedProxy) {
+    await targetSession.setProxy({
+      proxyRules: normalizedProxy
+    });
+  } else {
+    await targetSession.setProxy({
+      mode: "direct"
+    });
+  }
+
+  stationTwoProxyConfigured = normalizedProxy;
+
+  try {
+    await targetSession.closeAllConnections();
+  } catch {
+    // Ignore stale pooled connections after proxy changes.
+  }
+
+  return targetSession;
+}
+
+function clearStationTwoTokens() {
+  stationTwoState.accessToken = "";
+  stationTwoState.refreshToken = "";
+  stationTwoState.expiresAt = 0;
+}
+
+function getStationTwoTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+function setStationTwoCredentials({ email, password, proxyUrl } = {}) {
+  if (typeof email === "string" && email.trim()) {
+    stationTwoState.email = email.trim();
+  }
+
+  if (typeof password === "string" && password) {
+    stationTwoState.password = password;
+  }
+
+  if (proxyUrl !== undefined) {
+    stationTwoState.proxyUrl = normalizeStationTwoProxy(proxyUrl);
+  }
+}
+
+function applyStationTwoTokenPayload(payload = {}) {
+  stationTwoState.accessToken = String(payload.access_token || "").trim();
+  stationTwoState.refreshToken = String(payload.refresh_token || stationTwoState.refreshToken || "").trim();
+
+  const expiresIn = Number.parseInt(String(payload.expires_in || 0), 10);
+  stationTwoState.expiresAt = Number.isFinite(expiresIn) && expiresIn > 0
+    ? Date.now() + expiresIn * 1000
+    : 0;
+}
+
+function hasValidStationTwoAccessToken() {
+  return Boolean(
+    stationTwoState.accessToken
+    && stationTwoState.expiresAt
+    && Date.now() < stationTwoState.expiresAt - TOKEN_REFRESH_BUFFER_MS
+  );
+}
+
+function normalizeStationTwoItems(items) {
+  const list = Array.isArray(items) ? items : [];
+
+  return list.map((item) => {
+    const group = item && item.group ? item.group : {};
+    const monthlyLimitUsd = Number.isFinite(Number(group.monthly_limit_usd)) ? Number(group.monthly_limit_usd) : null;
+    const monthlyUsageUsd = Number.isFinite(Number(item.monthly_usage_usd)) ? Number(item.monthly_usage_usd) : null;
+    const dailyUsageUsd = Number.isFinite(Number(item.daily_usage_usd)) ? Number(item.daily_usage_usd) : null;
+    const remainingUsd = monthlyLimitUsd !== null && monthlyUsageUsd !== null
+      ? Math.max(0, monthlyLimitUsd - monthlyUsageUsd)
+      : null;
+
+    return {
+      id: item.id ?? null,
+      name: String(group.name || "").trim() || "未命名套餐",
+      monthlyLimitUsd,
+      dailyUsageUsd,
+      monthlyUsageUsd,
+      remainingUsd,
+      status: String(item.status || "").trim(),
+      expiresAt: item.expires_at || null
+    };
+  });
+}
+
+function summarizeStationTwoItems(items) {
+  const normalizedItems = normalizeStationTwoItems(items);
+  const totals = normalizedItems.reduce((acc, item) => {
+    acc.monthlyLimitUsd += item.monthlyLimitUsd ?? 0;
+    acc.dailyUsageUsd += item.dailyUsageUsd ?? 0;
+    acc.remainingUsd += item.remainingUsd ?? 0;
+    return acc;
+  }, {
+    monthlyLimitUsd: 0,
+    dailyUsageUsd: 0,
+    remainingUsd: 0
+  });
+
+  return {
+    title: normalizedItems.length === 1 ? normalizedItems[0].name : `活跃套餐 ${normalizedItems.length}`,
+    items: normalizedItems,
+    monthlyLimitUsd: normalizedItems.length ? totals.monthlyLimitUsd : null,
+    dailyUsageUsd: normalizedItems.length ? totals.dailyUsageUsd : null,
+    remainingUsd: normalizedItems.length ? totals.remainingUsd : null
+  };
+}
+
+function unwrapStationTwoPayload(bodyText) {
+  let parsed;
+
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    throw new Error("响应解析失败");
+  }
+
+  if (parsed && typeof parsed === "object" && parsed.code === 0) {
+    return parsed.data;
+  }
+
+  const detail = parsed && typeof parsed.message === "string"
+    ? parsed.message
+    : formatErrorDetail(bodyText);
+
+  throw new Error(detail || "站点二接口返回异常");
+}
+
+function toStationTwoUserFacingError(error) {
+  const message = error && error.message ? error.message : "站点二请求失败";
+  const statusCode = error && error.statusCode ? Number(error.statusCode) : 0;
+
+  if (isRetryableNetworkError(error)) {
+    return new Error("站点二网络请求失败，请检查代理、VPN 或本地网络设置");
+  }
+
+  if (statusCode === 401 || statusCode === 403 || /^HTTP 401\b|^HTTP 403\b/i.test(message)) {
+    return new Error("站点二登录已失效，请重新输入邮箱和密码");
+  }
+
+  if (statusCode === 404 || /^HTTP 404\b/i.test(message)) {
+    return new Error("站点二当前部署缺少所需接口，请确认服务端版本是否兼容");
+  }
+
+  if (/响应解析失败/.test(message)) {
+    return new Error("站点二返回了无法解析的数据，请稍后重试");
+  }
+
+  return new Error(message);
+}
+
+function requestStationTwo(url, { method = "GET", headers = {}, body = "", proxyUrl = stationTwoState.proxyUrl } = {}) {
+  return new Promise(async (resolve, reject) => {
+    let settled = false;
+    let responseData = "";
+    let timeoutId = null;
+    let request;
+
+    const finishResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      resolve(value);
+    };
+
+    const finishReject = (error) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      reject(error);
+    };
+
+    try {
+      const targetSession = await ensureStationTwoProxy(proxyUrl);
+      request = net.request({
+        method,
+        url,
+        redirect: "follow",
+        session: targetSession
+      });
+
+      request.setHeader("Accept", "application/json, text/plain, */*");
+      request.setHeader("Accept-Encoding", "identity");
+      request.setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Electron");
+
+      Object.entries(headers).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") return;
+        request.setHeader(key, value);
+      });
+
+      request.on("response", (response) => {
+        response.on("data", (chunk) => {
+          responseData += chunk.toString();
+        });
+
+        response.on("end", () => {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            finishResolve({
+              statusCode: response.statusCode,
+              bodyText: responseData
+            });
+            return;
+          }
+
+          const detail = formatErrorDetail(responseData);
+          const suffix = detail ? `: ${detail}` : "";
+          const error = new Error(`HTTP ${response.statusCode}${suffix}`);
+          error.statusCode = response.statusCode;
+          finishReject(error);
+        });
+      });
+
+      request.on("error", (error) => {
+        finishReject(error);
+      });
+
+      timeoutId = setTimeout(() => {
+        const timeoutError = new Error("请求超时");
+        timeoutError.code = "ETIMEDOUT";
+        finishReject(timeoutError);
+        request.abort();
+      }, STATION_TWO_TIMEOUT_MS);
+
+      if (body) {
+        request.write(body);
+      }
+
+      request.end();
+    } catch (error) {
+      finishReject(error);
+    }
+  });
+}
+
+async function loginStationTwo({ email, password, proxyUrl } = {}) {
+  const resolvedEmail = typeof email === "string" && email.trim() ? email.trim() : stationTwoState.email;
+  const resolvedPassword = typeof password === "string" && password ? password : stationTwoState.password;
+
+  if (!resolvedEmail || !resolvedPassword) {
+    throw new Error("请输入站点二邮箱和密码");
+  }
+
+  const requestBody = JSON.stringify({
+    email: resolvedEmail,
+    password: resolvedPassword
+  });
+
+  const { bodyText } = await requestStationTwo(STATION_TWO_LOGIN_URL, {
+    method: "POST",
+    proxyUrl,
+    headers: {
+      "Content-Type": "application/json",
+      Origin: STATION_TWO_BASE_URL,
+      Referer: `${STATION_TWO_BASE_URL}/login`
+    },
+    body: requestBody
+  });
+
+  const payload = unwrapStationTwoPayload(bodyText);
+  setStationTwoCredentials({
+    email: resolvedEmail,
+    password: resolvedPassword,
+    proxyUrl
+  });
+  applyStationTwoTokenPayload(payload);
+
+  return payload;
+}
+
+async function refreshStationTwoToken(proxyUrl = stationTwoState.proxyUrl) {
+  if (!stationTwoState.refreshToken) {
+    throw new Error("No refresh token available");
+  }
+
+  const requestBody = JSON.stringify({
+    refresh_token: stationTwoState.refreshToken
+  });
+
+  const { bodyText } = await requestStationTwo(STATION_TWO_REFRESH_URL, {
+    method: "POST",
+    proxyUrl,
+    headers: {
+      "Content-Type": "application/json",
+      Origin: STATION_TWO_BASE_URL,
+      Referer: `${STATION_TWO_BASE_URL}/login`
+    },
+    body: requestBody
+  });
+
+  const payload = unwrapStationTwoPayload(bodyText);
+  applyStationTwoTokenPayload(payload);
+  stationTwoState.refreshSupported = true;
+
+  return payload;
+}
+
+async function ensureStationTwoSession({ email, password, proxyUrl } = {}) {
+  setStationTwoCredentials({ email, password, proxyUrl });
+
+  if (hasValidStationTwoAccessToken()) {
+    return stationTwoState.accessToken;
+  }
+
+  if (stationTwoState.refreshToken && stationTwoState.refreshSupported !== false) {
+    try {
+      await refreshStationTwoToken(stationTwoState.proxyUrl);
+      return stationTwoState.accessToken;
+    } catch (error) {
+      if (Number(error.statusCode) === 404) {
+        stationTwoState.refreshSupported = false;
+      }
+      clearStationTwoTokens();
+    }
+  }
+
+  await loginStationTwo({
+    email: stationTwoState.email,
+    password: stationTwoState.password,
+    proxyUrl: stationTwoState.proxyUrl
+  });
+
+  return stationTwoState.accessToken;
+}
+
+async function fetchStationTwoDashboard({ email, password, proxyUrl } = {}) {
+  setStationTwoCredentials({ email, password, proxyUrl });
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const accessToken = await ensureStationTwoSession({
+        email: stationTwoState.email,
+        password: stationTwoState.password,
+        proxyUrl: stationTwoState.proxyUrl
+      });
+      const timezone = encodeURIComponent(getStationTwoTimezone());
+      const { bodyText } = await requestStationTwo(`${STATION_TWO_ACTIVE_URL}?timezone=${timezone}`, {
+        method: "GET",
+        proxyUrl: stationTwoState.proxyUrl,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Referer: `${STATION_TWO_BASE_URL}/dashboard`
+        }
+      });
+      const payload = unwrapStationTwoPayload(bodyText);
+      const items = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
+      const summary = summarizeStationTwoItems(items);
+
+      return {
+        summary,
+        session: {
+          strategy: stationTwoState.refreshSupported === false ? "relogin" : "refresh",
+          expiresAt: stationTwoState.expiresAt || null,
+          proxyUrl: stationTwoState.proxyUrl || "",
+          email: stationTwoState.email || ""
+        }
+      };
+    } catch (error) {
+      const statusCode = Number(error && error.statusCode ? error.statusCode : 0);
+      if ((statusCode === 401 || statusCode === 403) && attempt === 1) {
+        clearStationTwoTokens();
+        continue;
+      }
+
+      throw toStationTwoUserFacingError(error);
+    }
+  }
+
+  throw new Error("站点二请求失败");
+}
+
 async function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -231,6 +658,10 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("fetch-dashboard", (_event, { authorization, page, limit } = {}) => {
   return fetchDashboardWithRetry(authorization, { page, limit });
+});
+
+ipcMain.handle("fetch-station-two-dashboard", (_event, payload = {}) => {
+  return fetchStationTwoDashboard(payload);
 });
 
 ipcMain.handle("copy-text", (_event, { text } = {}) => {
