@@ -1,5 +1,20 @@
 const STORAGE_KEY = "cto_dashboard_key";
+const SOURCE_STORAGE_KEY = "cto_dashboard_source";
 const PAGE_LIMIT = 10;
+const SOURCE_CONFIG = {
+  cto: {
+    title: "CTO 面板",
+    text: "当前已接入 CTO 面板，你可以直接刷新查看额度、消费记录和模型分布。"
+  },
+  nova: {
+    title: "站点二",
+    text: "该站点先保留切换入口，后续你提供接口后我再把独立数据面板接上。"
+  },
+  atlas: {
+    title: "站点三",
+    text: "这个入口已经预留好，后续补充接口后会展示与当前站点不同的数据结构。"
+  }
+};
 const RESOURCE_LINKS = {
   official: {
     title: "官网地址",
@@ -12,6 +27,7 @@ const RESOURCE_LINKS = {
 };
 
 const els = {
+  sourceSwitchText: document.getElementById("sourceSwitchText"),
   balanceAmount: document.getElementById("balanceAmount"),
   totalConsumedAmount: document.getElementById("totalConsumedAmount"),
   totalRechargedAmount: document.getElementById("totalRechargedAmount"),
@@ -35,7 +51,9 @@ const els = {
   linkModalCloseBtn: document.getElementById("linkModalCloseBtn"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
   copyLinkStatus: document.getElementById("copyLinkStatus"),
-  srAnnounce: document.getElementById("srAnnounce")
+  srAnnounce: document.getElementById("srAnnounce"),
+  sourceTabs: Array.from(document.querySelectorAll("[data-source-tab]")),
+  sourceViews: Array.from(document.querySelectorAll("[data-source-view]"))
 };
 
 let hasSnapshot = false;
@@ -47,6 +65,7 @@ let currentPageSize = PAGE_LIMIT;
 let lastSubmittedKey = "";
 let activeResourceKey = "";
 let copyStatusTimer = null;
+let currentSource = "cto";
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -228,6 +247,36 @@ function setCopyStatus(text = "") {
     els.copyLinkStatus.textContent = "";
     copyStatusTimer = null;
   }, 1800);
+}
+
+function setActiveSource(sourceKey, { persist = true } = {}) {
+  const source = SOURCE_CONFIG[sourceKey] ? sourceKey : "cto";
+  currentSource = source;
+
+  els.sourceTabs.forEach((tab) => {
+    const isActive = tab.dataset.sourceTab === source;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+    tab.setAttribute("tabindex", isActive ? "0" : "-1");
+  });
+
+  els.sourceViews.forEach((view) => {
+    const isActive = view.dataset.sourceView === source;
+    view.hidden = !isActive;
+    view.classList.toggle("is-active", isActive);
+  });
+
+  els.sourceSwitchText.textContent = SOURCE_CONFIG[source].text;
+
+  if (persist) {
+    localStorage.setItem(SOURCE_STORAGE_KEY, source);
+  }
+
+  if (!els.linkModal.hidden) {
+    closeLinkModal();
+  }
+
+  announce(`已切换到${SOURCE_CONFIG[source].title}`);
 }
 
 async function copyTextToClipboard(text) {
@@ -515,14 +564,38 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.querySelectorAll(".interactive-panel").forEach(attachPointerGlow);
+els.sourceTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    setActiveSource(tab.dataset.sourceTab);
+  });
+
+  tab.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+    event.preventDefault();
+    const currentIndex = els.sourceTabs.indexOf(tab);
+    const offset = event.key === "ArrowRight" ? 1 : -1;
+    const nextIndex = (currentIndex + offset + els.sourceTabs.length) % els.sourceTabs.length;
+    const nextTab = els.sourceTabs[nextIndex];
+
+    nextTab.focus();
+    setActiveSource(nextTab.dataset.sourceTab);
+  });
+});
 
 const saved = localStorage.getItem(STORAGE_KEY);
 if (saved) {
   els.keyInput.value = saved;
 }
 
+const savedSource = localStorage.getItem(SOURCE_STORAGE_KEY);
+if (savedSource && SOURCE_CONFIG[savedSource]) {
+  currentSource = savedSource;
+}
+
 syncToggleState();
 requestAnimationFrame(() => {
   document.body.classList.add("ready");
   renderIdleState();
+  setActiveSource(currentSource, { persist: false });
 });

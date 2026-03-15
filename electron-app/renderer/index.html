@@ -10,111 +10,138 @@
   <header class="titlebar">
     <div class="titlebar-brand">
       <span class="brand-dot" aria-hidden="true"></span>
-      <span class="titlebar-title">Key Dashboard</span>
+      <div class="titlebar-copy">
+        <span class="titlebar-title">Key Dashboard</span>
+        <p id="sourceSwitchText" class="titlebar-source-text">当前已接入 CTO 面板，你可以直接刷新查看额度、消费记录和模型分布。</p>
+      </div>
+    </div>
+
+    <div class="titlebar-trailing">
+      <div class="titlebar-sources" role="tablist" aria-label="站点列表">
+        <button id="sourceTabCto" class="source-pill is-active" type="button" role="tab" aria-selected="true" aria-controls="sourceViewCto" data-source-tab="cto">CTO 面板</button>
+        <button id="sourceTabNova" class="source-pill" type="button" role="tab" aria-selected="false" aria-controls="sourceViewNova" data-source-tab="nova">站点二</button>
+        <button id="sourceTabAtlas" class="source-pill" type="button" role="tab" aria-selected="false" aria-controls="sourceViewAtlas" data-source-tab="atlas">站点三</button>
+      </div>
+
+      <div class="titlebar-window-slot" aria-hidden="true"></div>
     </div>
   </header>
 
   <main class="shell">
-    <section class="hero-grid hero-grid--compact" aria-label="核心面板">
-      <article class="panel hero-panel hero-panel--minimal interactive-panel reveal" aria-labelledby="balanceTitle">
-        <span class="panel-chip">Available Credit</span>
-        <div class="credit-stage">
-          <div class="credit-primary">
-            <div class="credit-copy">
-              <span id="balanceTitle" class="metric-label">当前余额</span>
-              <div id="balanceAmount" class="balance-amount empty">暂无数据</div>
+    <div id="sourceViewCto" class="source-view" data-source-view="cto" role="tabpanel" aria-labelledby="sourceTabCto">
+      <section class="hero-grid hero-grid--compact" aria-label="核心面板">
+        <article class="panel hero-panel hero-panel--minimal interactive-panel reveal" aria-labelledby="balanceTitle">
+          <span class="panel-chip">Available Credit</span>
+          <div class="credit-stage">
+            <div class="credit-primary">
+              <div class="credit-copy">
+                <span id="balanceTitle" class="metric-label">当前余额</span>
+                <div id="balanceAmount" class="balance-amount empty">暂无数据</div>
+              </div>
+              <div class="credit-ring" aria-hidden="true">
+                <span class="credit-ring-core"></span>
+              </div>
             </div>
-            <div class="credit-ring" aria-hidden="true">
-              <span class="credit-ring-core"></span>
+
+            <div class="credit-secondary-grid" aria-label="额度概览">
+              <div class="credit-stat credit-stat--consumed">
+                <span class="credit-stat-label">今日消费</span>
+                <strong id="totalConsumedAmount" class="credit-stat-value">—</strong>
+              </div>
+
+              <div class="credit-stat credit-stat--recharged">
+                <span class="credit-stat-label">总额度</span>
+                <strong id="totalRechargedAmount" class="credit-stat-value">—</strong>
+              </div>
+            </div>
+
+            <div class="credit-actions" aria-label="相关链接">
+              <button id="viewOfficialBtn" class="credit-link-btn" type="button">查看官网</button>
+              <button id="viewGuideBtn" class="credit-link-btn credit-link-btn--secondary" type="button">查看用法</button>
             </div>
           </div>
+        </article>
 
-          <div class="credit-secondary-grid" aria-label="额度概览">
-            <div class="credit-stat credit-stat--consumed">
-              <span class="credit-stat-label">今日消费</span>
-              <strong id="totalConsumedAmount" class="credit-stat-value">—</strong>
-            </div>
-
-            <div class="credit-stat credit-stat--recharged">
-              <span class="credit-stat-label">总额度</span>
-              <strong id="totalRechargedAmount" class="credit-stat-value">—</strong>
-            </div>
+        <aside class="panel control-panel control-panel--minimal interactive-panel reveal" aria-labelledby="controlTitle">
+          <div class="panel-heading panel-heading--minimal">
+            <span class="panel-chip">API Key</span>
+            <h2 id="controlTitle" class="panel-title panel-title--compact">输入后刷新</h2>
           </div>
 
-          <div class="credit-actions" aria-label="相关链接">
-            <button id="viewOfficialBtn" class="credit-link-btn" type="button">查看官网</button>
-            <button id="viewGuideBtn" class="credit-link-btn credit-link-btn--secondary" type="button">查看用法</button>
+          <div class="input-shell">
+            <span class="input-icon" aria-hidden="true"></span>
+            <input id="keyInput" type="password" placeholder="输入 sk-... 或 Bearer ..." autocomplete="off" spellcheck="false" aria-describedby="msg">
+            <button id="toggleBtn" class="toggle-btn" type="button" aria-pressed="false" aria-label="显示 API Key">显示</button>
           </div>
-        </div>
-      </article>
 
-      <aside class="panel control-panel control-panel--minimal interactive-panel reveal" aria-labelledby="controlTitle">
+          <button id="refreshBtn" class="refresh-btn" type="button">
+            <span class="btn-loader" aria-hidden="true"></span>
+            <span class="btn-label">刷新数据</span>
+          </button>
+
+          <div class="message-row">
+            <div id="msg" class="msg" role="status" aria-live="polite"></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel distribution-panel reveal" aria-labelledby="distributionTitle">
         <div class="panel-heading panel-heading--minimal">
-          <span class="panel-chip">API Key</span>
-          <h2 id="controlTitle" class="panel-title panel-title--compact">输入后刷新</h2>
+          <span class="panel-chip">Models</span>
+          <h2 id="distributionTitle" class="panel-title panel-title--compact">模型使用分布</h2>
+          <p class="distribution-copy">展示当前时间范围内各模型的调用次数与花费。</p>
         </div>
 
-        <div class="input-shell">
-          <span class="input-icon" aria-hidden="true"></span>
-          <input id="keyInput" type="password" placeholder="输入 sk-... 或 Bearer ..." autocomplete="off" spellcheck="false" aria-describedby="msg">
-          <button id="toggleBtn" class="toggle-btn" type="button" aria-pressed="false" aria-label="显示 API Key">显示</button>
+        <div id="distributionBody" class="distribution-grid">
+          <div class="empty-state">
+            <div class="empty-orb" aria-hidden="true"></div>
+            <p class="empty-title">刷新后查看分布</p>
+            <p class="empty-text">同步成功后，这里会按模型展示调用次数和花费，方便你快速判断主要消耗来自哪里。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel table-panel reveal" aria-labelledby="tableTitle">
+        <div class="table-top table-top--minimal">
+          <span class="panel-chip">Ledger</span>
+          <h2 id="tableTitle" class="table-title table-title--compact">消费记录</h2>
         </div>
 
-        <button id="refreshBtn" class="refresh-btn" type="button">
-          <span class="btn-loader" aria-hidden="true"></span>
-          <span class="btn-label">刷新数据</span>
-        </button>
-
-        <div class="message-row">
-          <div id="msg" class="msg" role="status" aria-live="polite"></div>
+        <div class="table-grid table-grid--head" role="row">
+          <span role="columnheader">时间</span>
+          <span role="columnheader">模型</span>
+          <span role="columnheader">请求数</span>
+          <span role="columnheader">消费</span>
         </div>
-      </aside>
+
+        <div id="tableBody" class="table-body" role="rowgroup">
+          <div class="empty-state">
+            <div class="empty-orb" aria-hidden="true"></div>
+            <p class="empty-title">输入 API Key 后点击刷新</p>
+            <p class="empty-text">同步成功后，这里会展示最近 10 条消费记录、模型名称和单条消费金额，让你快速判断最近的调用节奏。</p>
+          </div>
+        </div>
+
+        <div id="tablePagination" class="table-pagination" hidden>
+          <div id="paginationMeta" class="pagination-meta" aria-live="polite"></div>
+          <div class="pagination-actions">
+            <button id="prevPageBtn" class="page-btn" type="button">上一页</button>
+            <button id="nextPageBtn" class="page-btn" type="button">下一页</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section id="sourceViewNova" class="panel source-view source-placeholder reveal" data-source-view="nova" hidden role="tabpanel" aria-labelledby="sourceTabNova">
+      <span class="panel-chip">Coming Next</span>
+      <h2 id="sourceViewNovaTitle" class="source-placeholder-title">站点二</h2>
+      <p class="source-placeholder-text">该站点的独立仪表盘将在你提供接口后接入。</p>
     </section>
 
-    <section class="panel distribution-panel reveal" aria-labelledby="distributionTitle">
-      <div class="panel-heading panel-heading--minimal">
-        <span class="panel-chip">Models</span>
-        <h2 id="distributionTitle" class="panel-title panel-title--compact">模型使用分布</h2>
-        <p class="distribution-copy">展示当前时间范围内各模型的调用次数与花费。</p>
-      </div>
-
-      <div id="distributionBody" class="distribution-grid">
-        <div class="empty-state">
-          <div class="empty-orb" aria-hidden="true"></div>
-          <p class="empty-title">刷新后查看分布</p>
-          <p class="empty-text">同步成功后，这里会按模型展示调用次数和花费，方便你快速判断主要消耗来自哪里。</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel table-panel reveal" aria-labelledby="tableTitle">
-      <div class="table-top table-top--minimal">
-        <span class="panel-chip">Ledger</span>
-        <h2 id="tableTitle" class="table-title table-title--compact">消费记录</h2>
-      </div>
-
-      <div class="table-grid table-grid--head" role="row">
-        <span role="columnheader">时间</span>
-        <span role="columnheader">模型</span>
-        <span role="columnheader">请求数</span>
-        <span role="columnheader">消费</span>
-      </div>
-
-      <div id="tableBody" class="table-body" role="rowgroup">
-        <div class="empty-state">
-          <div class="empty-orb" aria-hidden="true"></div>
-          <p class="empty-title">输入 API Key 后点击刷新</p>
-          <p class="empty-text">同步成功后，这里会展示最近 10 条消费记录、模型名称和单条消费金额，让你快速判断最近的调用节奏。</p>
-        </div>
-      </div>
-
-      <div id="tablePagination" class="table-pagination" hidden>
-        <div id="paginationMeta" class="pagination-meta" aria-live="polite"></div>
-        <div class="pagination-actions">
-          <button id="prevPageBtn" class="page-btn" type="button">上一页</button>
-          <button id="nextPageBtn" class="page-btn" type="button">下一页</button>
-        </div>
-      </div>
+    <section id="sourceViewAtlas" class="panel source-view source-placeholder reveal" data-source-view="atlas" hidden role="tabpanel" aria-labelledby="sourceTabAtlas">
+      <span class="panel-chip">Queued</span>
+      <h2 id="sourceViewAtlasTitle" class="source-placeholder-title">站点三</h2>
+      <p class="source-placeholder-text">该站点的数据展示已预留入口，后续补充接口即可接入。</p>
     </section>
 
     <div id="srAnnounce" class="sr-only" aria-live="polite" aria-atomic="true"></div>

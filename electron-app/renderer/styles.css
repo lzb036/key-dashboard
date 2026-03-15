@@ -1,5 +1,7 @@
 :root {
   color-scheme: dark;
+  --titlebar-height: 64px;
+  --window-controls-width: 148px;
   --bg: #07101b;
   --bg-deep: #050b13;
   --panel: rgba(10, 18, 30, 0.8);
@@ -89,11 +91,12 @@ button {
 .titlebar {
   position: relative;
   z-index: 5;
-  height: 46px;
+  height: var(--titlebar-height);
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 18px;
+  gap: 18px;
+  padding: 0 0 0 18px;
   -webkit-app-region: drag;
   background: rgba(6, 11, 20, 0.72);
   backdrop-filter: blur(22px);
@@ -105,6 +108,16 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.titlebar-brand {
+  flex: 1 1 auto;
+}
+
+.titlebar-copy {
+  display: grid;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -125,6 +138,16 @@ button {
   color: rgba(237, 244, 255, 0.92);
 }
 
+.titlebar-source-text {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .titlebar-pill,
 .titlebar-caption {
   font-size: 11px;
@@ -140,10 +163,63 @@ button {
   background: rgba(19, 29, 45, 0.66);
 }
 
+.titlebar-trailing {
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+}
+
+.titlebar-sources {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(50vw, 460px);
+  overflow-x: auto;
+  padding: 0 12px 2px 0;
+  -webkit-app-region: no-drag;
+  scrollbar-width: none;
+}
+
+.titlebar-sources::-webkit-scrollbar {
+  display: none;
+}
+
+.titlebar-window-slot {
+  position: relative;
+  width: var(--window-controls-width);
+  flex: 0 0 var(--window-controls-width);
+  align-self: stretch;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 54%),
+    rgba(9, 17, 29, 0.42);
+}
+
+.titlebar-window-slot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(154, 175, 210, 0.26), transparent);
+}
+
+.titlebar-window-slot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 0% 50%, rgba(121, 169, 255, 0.12), transparent 42%);
+}
+
 .shell {
   position: relative;
   z-index: 1;
-  height: calc(100vh - 46px);
+  height: calc(100vh - var(--titlebar-height));
   overflow-y: auto;
   padding: 28px 30px 34px;
 }
@@ -159,6 +235,110 @@ button {
 .shell::-webkit-scrollbar-thumb {
   background: rgba(167, 186, 219, 0.16);
   border-radius: 999px;
+}
+
+.source-pill {
+  appearance: none;
+  position: relative;
+  overflow: hidden;
+  min-width: 92px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(153, 177, 214, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 54%),
+    rgba(13, 23, 38, 0.78);
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+  transition:
+    transform 180ms var(--ease-out),
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.source-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  transform: translateX(-120%);
+}
+
+.source-pill:hover {
+  transform: translateY(-1px);
+  border-color: rgba(121, 169, 255, 0.24);
+  color: var(--text);
+}
+
+.source-pill:hover::before {
+  animation: copy-sheen 560ms ease;
+}
+
+.source-pill.is-active {
+  border-color: rgba(121, 169, 255, 0.28);
+  background:
+    linear-gradient(135deg, rgba(121, 169, 255, 0.18), rgba(58, 213, 200, 0.12)),
+    rgba(14, 28, 44, 0.92);
+  color: #f2f7ff;
+  box-shadow:
+    0 0 0 4px rgba(121, 169, 255, 0.08),
+    0 16px 28px rgba(10, 26, 45, 0.24);
+}
+
+.source-view {
+  min-width: 0;
+}
+
+.source-view[hidden] {
+  display: none !important;
+}
+
+.source-placeholder {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 14px;
+  min-height: 360px;
+  padding: 32px 30px;
+  background:
+    radial-gradient(circle at 14% 16%, rgba(255, 184, 98, 0.12), transparent 28%),
+    radial-gradient(circle at 86% 24%, rgba(121, 169, 255, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(11, 18, 31, 0.96), rgba(7, 13, 23, 0.98));
+}
+
+.source-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 22px;
+  border-radius: 24px;
+  border: 1px dashed rgba(153, 177, 214, 0.18);
+  pointer-events: none;
+}
+
+.source-placeholder-title {
+  position: relative;
+  z-index: 1;
+  font-family: var(--title-font);
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+  color: #f4f8ff;
+}
+
+.source-placeholder-text {
+  position: relative;
+  z-index: 1;
+  max-width: 40ch;
+  color: var(--text-soft);
+  font-size: 15px;
+  line-height: 1.8;
 }
 
 .hero-grid,
@@ -1717,6 +1897,7 @@ body.ready .reveal {
 .toggle-btn:focus-visible,
 .refresh-btn:focus-visible,
 .page-btn:focus-visible,
+.source-pill:focus-visible,
 .credit-link-btn:focus-visible,
 .link-modal-copy-btn:focus-visible,
 .link-modal-close:focus-visible {
@@ -1779,7 +1960,15 @@ body.ready .reveal {
   }
 }
 
-@media (max-width: 1180px) {
+  @media (max-width: 1180px) {
+  .titlebar-source-text {
+    max-width: 32ch;
+  }
+
+  .titlebar-sources {
+    max-width: min(42vw, 360px);
+  }
+
   .hero-grid {
     grid-template-columns: 1fr;
   }
@@ -1797,6 +1986,25 @@ body.ready .reveal {
 @media (max-width: 900px) {
   .shell {
     padding: 22px 18px 28px;
+  }
+
+  .titlebar {
+    gap: 12px;
+    padding-left: 14px;
+  }
+
+  .titlebar-source-text {
+    display: none;
+  }
+
+  .titlebar-sources {
+    max-width: min(44vw, 280px);
+    padding-right: 10px;
+  }
+
+  .titlebar-window-slot {
+    flex-basis: 132px;
+    width: 132px;
   }
 
   .stats-grid,
@@ -1857,7 +2065,35 @@ body.ready .reveal {
 
 @media (max-width: 640px) {
   .titlebar {
-    padding-right: 140px;
+    padding-right: 12px;
+  }
+
+  .titlebar-brand {
+    min-width: 0;
+  }
+
+  .titlebar-title {
+    font-size: 12px;
+  }
+
+  .titlebar-trailing {
+    flex: 0 0 auto;
+  }
+
+  .titlebar-sources {
+    max-width: 150px;
+    gap: 6px;
+    padding-right: 8px;
+  }
+
+  .titlebar-window-slot {
+    flex-basis: 120px;
+    width: 120px;
+  }
+
+  .source-placeholder {
+    min-height: 280px;
+    padding: 26px 18px;
   }
 
   .titlebar-meta {
