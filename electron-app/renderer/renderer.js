@@ -5,9 +5,9 @@ const STATION_TWO_PROXY_KEY = "station_two_proxy";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
 const PAGE_LIMIT = 10;
 const SOURCE_CONFIG = {
-  cto: { title: "CTO 面板" },
-  nova: { title: "站点二" },
-  atlas: { title: "站点三" }
+  cto: { title: "hxrra" },
+  nova: { title: "YesCode" },
+  atlas: { title: "998Code" }
 };
 const RESOURCE_LINKS = {
   official: { title: "官网地址", url: "https://cto.hxrra.com" },
@@ -41,9 +41,6 @@ const els = {
   stationTwoRemainingAmount: document.getElementById("stationTwoRemainingAmount"),
   stationTwoMonthlyLimitAmount: document.getElementById("stationTwoMonthlyLimitAmount"),
   stationTwoDailyUsageAmount: document.getElementById("stationTwoDailyUsageAmount"),
-  stationTwoSessionMeta: document.getElementById("stationTwoSessionMeta"),
-  stationTwoStrategyBadge: document.getElementById("stationTwoStrategyBadge"),
-  stationTwoProxyBadge: document.getElementById("stationTwoProxyBadge"),
   stationTwoEmailInput: document.getElementById("stationTwoEmailInput"),
   stationTwoPasswordInput: document.getElementById("stationTwoPasswordInput"),
   stationTwoAdvancedSettings: document.getElementById("stationTwoAdvancedSettings"),
@@ -57,9 +54,6 @@ const els = {
   stationTwoDashboardMsg: document.getElementById("stationTwoDashboardMsg"),
   stationTwoReloginBtn: document.getElementById("stationTwoReloginBtn"),
   stationTwoEmailReadout: document.getElementById("stationTwoEmailReadout"),
-  stationTwoProxyReadout: document.getElementById("stationTwoProxyReadout"),
-  stationTwoStrategyReadout: document.getElementById("stationTwoStrategyReadout"),
-  stationTwoPackageList: document.getElementById("stationTwoPackageList"),
   linkModal: document.getElementById("linkModal"),
   linkModalBackdrop: document.getElementById("linkModalBackdrop"),
   linkModalTitle: document.getElementById("linkModalTitle"),
@@ -162,7 +156,7 @@ function setStationTwoButtonLoading(loading) {
   els.stationTwoLoginBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "login");
   els.stationTwoRefreshBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "dashboard");
   els.stationTwoLoginLabel.textContent = stationTwoLoading && stationTwoView === "login" ? "登录中..." : "登录";
-  els.stationTwoRefreshLabel.textContent = stationTwoLoading && stationTwoView === "dashboard" ? "刷新中..." : "刷新站点二";
+  els.stationTwoRefreshLabel.textContent = stationTwoLoading && stationTwoView === "dashboard" ? "刷新中..." : "刷新 YesCode";
 }
 
 function getStationTwoPreferencePayload({ passwordOverride } = {}) {
@@ -196,10 +190,6 @@ function skeletonRowMarkup(index) {
 
 function distributionSkeletonMarkup(index) {
   return `<article class="distribution-card" style="--delay:${index * 36}ms;animation:none;opacity:1;transform:none;"><div class="distribution-card-head"><span class="distribution-model skeleton">claude-sonnet-4-6</span></div><div class="distribution-metrics"><div class="distribution-metric"><span class="distribution-metric-label">调用次数</span><strong class="distribution-metric-value skeleton">128</strong></div><div class="distribution-metric"><span class="distribution-metric-label">花费</span><strong class="distribution-metric-value distribution-metric-value--cost skeleton">$12.60</strong></div></div></article>`;
-}
-
-function stationTwoSkeletonMarkup(index) {
-  return `<article class="station-two-package-card" style="--delay:${index * 42}ms;animation:none;opacity:1;transform:none;"><div class="station-two-card-head"><div><span class="station-two-card-kicker skeleton">活跃套餐</span><h3 class="station-two-card-title skeleton">卡特尔套餐</h3></div><span class="status-badge pending">同步中</span></div><div class="station-two-card-grid"><div class="station-two-kpi"><span class="distribution-metric-label">剩余额度</span><strong class="station-two-kpi-value skeleton">$34.17</strong></div><div class="station-two-kpi"><span class="distribution-metric-label">总额度</span><strong class="station-two-kpi-value skeleton">$300.00</strong></div><div class="station-two-kpi"><span class="distribution-metric-label">今日消费</span><strong class="station-two-kpi-value skeleton">$11.38</strong></div></div></article>`;
 }
 
 function setCreditValues({ balance, totalConsumed, totalRecharged }) {
@@ -480,7 +470,7 @@ function syncStationTwoToggleState() {
   const isVisible = els.stationTwoPasswordInput.type === "text";
   els.stationTwoToggleBtn.textContent = isVisible ? "隐藏" : "显示";
   els.stationTwoToggleBtn.setAttribute("aria-pressed", String(isVisible));
-  els.stationTwoToggleBtn.setAttribute("aria-label", `${isVisible ? "隐藏" : "显示"}站点二密码`);
+  els.stationTwoToggleBtn.setAttribute("aria-label", `${isVisible ? "隐藏" : "显示"} YesCode 密码`);
 }
 
 function setStationTwoView(view) {
@@ -513,49 +503,9 @@ function setStationTwoAdvancedSettingsOpen(open) {
   els.stationTwoAdvancedToggle.setAttribute("aria-expanded", String(isOpen));
 }
 
-function getStationTwoStrategyInfo(strategy, expiresAt = null) {
-  const suffix = expiresAt ? `，令牌预计于 ${fmtDate(expiresAt)} 到期` : "";
-  if (strategy === "refresh") {
-    return {
-      badge: "Refresh 续期",
-      readout: "Refresh Token",
-      meta: `检测到标准双令牌流程，优先使用 Refresh Token 自动续期${suffix}`,
-      emphasized: true
-    };
-  }
-  if (strategy === "relogin") {
-    return {
-      badge: "自动重登",
-      readout: "重新登录",
-      meta: `当前部署未开放刷新接口，令牌失效后会静默重新登录${suffix}`,
-      emphasized: false
-    };
-  }
-  return {
-    badge: "自动续期待激活",
-    readout: "待连接",
-    meta: "主进程会托管登录态，当前部署会在需要时自动重新登录。",
-    emphasized: false
-  };
-}
-
-function getStationTwoProxyText(proxyUrl) {
-  const proxy = String(proxyUrl || "").trim();
-  return proxy || "直连";
-}
-
-function syncStationTwoSessionChrome({ email, proxyUrl, strategy, expiresAt } = {}) {
-  const strategyInfo = getStationTwoStrategyInfo(strategy, expiresAt);
+function syncStationTwoSessionChrome({ email } = {}) {
   const resolvedEmail = String(email || els.stationTwoEmailInput.value || "").trim();
-  const resolvedProxy = getStationTwoProxyText(proxyUrl !== undefined ? proxyUrl : els.stationTwoProxyInput.value);
-  els.stationTwoSessionMeta.textContent = strategyInfo.meta;
-  els.stationTwoStrategyBadge.textContent = strategyInfo.badge;
-  els.stationTwoStrategyBadge.className = `soft-pill${strategyInfo.emphasized ? " emphasis" : ""}`;
-  els.stationTwoProxyBadge.textContent = resolvedProxy === "直连" ? "直连模式" : `代理 ${resolvedProxy.replace(/^https?:\/\//i, "")}`;
-  els.stationTwoProxyBadge.className = `soft-pill${resolvedProxy === "直连" ? " emphasis" : ""}`;
   els.stationTwoEmailReadout.textContent = resolvedEmail || "未填写";
-  els.stationTwoProxyReadout.textContent = resolvedProxy === STATION_TWO_DEFAULT_PROXY ? "本机 7890" : resolvedProxy;
-  els.stationTwoStrategyReadout.textContent = strategyInfo.readout;
 }
 
 function setStationTwoSummaryValues({ title, remainingUsd, monthlyLimitUsd, dailyUsageUsd }) {
@@ -567,53 +517,15 @@ function setStationTwoSummaryValues({ title, remainingUsd, monthlyLimitUsd, dail
   els.stationTwoDailyUsageAmount.textContent = numberOrNull(dailyUsageUsd) !== null ? fmtMoney(dailyUsageUsd) : "—";
 }
 
-function getStationTwoStatusInfo(status) {
-  const value = String(status || "").trim().toLowerCase();
-  if (value === "active") return { label: "活跃", tone: "active" };
-  if (value === "expired" || value === "inactive" || value === "disabled") return { label: "不可用", tone: "inactive" };
-  return { label: value ? value.toUpperCase() : "待确认", tone: "pending" };
-}
-
-function renderStationTwoPackageList(items) {
-  if (!Array.isArray(items) || !items.length) {
-    els.stationTwoPackageList.innerHTML = emptyStateMarkup("暂无活跃套餐", "接口已经连通，但当前账号下没有可展示的活跃套餐。");
-    return;
-  }
-  els.stationTwoPackageList.innerHTML = items.map((item, index) => {
-    const status = getStationTwoStatusInfo(item.status);
-    return `
-      <article class="station-two-package-card" style="--delay:${index * 52}ms">
-        <div class="station-two-card-head">
-          <div class="station-two-card-title-wrap">
-            <span class="station-two-card-kicker">活跃套餐 ${index + 1}</span>
-            <h3 class="station-two-card-title">${esc(item.name || "未命名套餐")}</h3>
-          </div>
-          <span class="status-badge ${status.tone}">${esc(status.label)}</span>
-        </div>
-        <div class="station-two-card-grid">
-          <div class="station-two-kpi station-two-kpi--remaining"><span class="distribution-metric-label">剩余额度</span><strong class="station-two-kpi-value">${esc(fmtMoney(item.remainingUsd))}</strong></div>
-          <div class="station-two-kpi"><span class="distribution-metric-label">总额度</span><strong class="station-two-kpi-value">${esc(fmtMoney(item.monthlyLimitUsd))}</strong></div>
-          <div class="station-two-kpi"><span class="distribution-metric-label">今日消费</span><strong class="station-two-kpi-value">${esc(fmtMoney(item.dailyUsageUsd))}</strong></div>
-        </div>
-        <div class="station-two-card-footer"><span class="station-two-card-footer-label">到期时间</span><strong class="station-two-card-footer-value">${esc(fmtDate(item.expiresAt))}</strong></div>
-      </article>
-    `;
-  }).join("");
-}
-
 function renderStationTwoIdleState() {
   if (!stationTwoHasSnapshot) {
     setStationTwoSummaryValues({ title: "等待登录", remainingUsd: null, monthlyLimitUsd: null, dailyUsageUsd: null });
-    els.stationTwoPackageList.innerHTML = emptyStateMarkup("登录后查看套餐", "同步成功后，这里会列出活跃套餐的名称、剩余额度、总额度和今日消费。");
     setStationTwoView("login");
   } else {
     setStationTwoView("dashboard");
   }
   syncStationTwoSessionChrome({
-    email: els.stationTwoEmailInput.value.trim(),
-    proxyUrl: els.stationTwoProxyInput.value.trim(),
-    strategy: stationTwoSession?.strategy || "",
-    expiresAt: stationTwoSession?.expiresAt || null
+    email: els.stationTwoEmailInput.value.trim() || stationTwoSession?.email || ""
   });
   setStationTwoMessage("");
   setStationTwoButtonLoading(false);
@@ -625,12 +537,8 @@ function renderStationTwoLoadingState() {
   els.stationTwoRemainingAmount.className = "balance-amount empty";
   els.stationTwoMonthlyLimitAmount.textContent = "—";
   els.stationTwoDailyUsageAmount.textContent = "—";
-  els.stationTwoPackageList.innerHTML = [0, 1].map(stationTwoSkeletonMarkup).join("");
   syncStationTwoSessionChrome({
-    email: els.stationTwoEmailInput.value.trim() || stationTwoSession?.email || "",
-    proxyUrl: els.stationTwoProxyInput.value.trim(),
-    strategy: stationTwoSession?.strategy || "",
-    expiresAt: stationTwoSession?.expiresAt || null
+    email: els.stationTwoEmailInput.value.trim() || stationTwoSession?.email || ""
   });
 }
 
@@ -639,12 +547,11 @@ function renderStationTwoData(data) {
   stationTwoSession = data?.session || {};
   stationTwoHasSnapshot = true;
   setStationTwoSummaryValues({
-    title: summary.title || "活跃套餐",
+    title: summary.title || "当前套餐",
     remainingUsd: summary.remainingUsd,
     monthlyLimitUsd: summary.monthlyLimitUsd,
     dailyUsageUsd: summary.dailyUsageUsd
   });
-  renderStationTwoPackageList(summary.items);
   syncStationTwoSessionChrome(stationTwoSession);
   setStationTwoView("dashboard");
 }
@@ -652,7 +559,6 @@ function renderStationTwoData(data) {
 function renderStationTwoError(message) {
   if (!stationTwoHasSnapshot) {
     setStationTwoSummaryValues({ title: "暂时无法同步", remainingUsd: null, monthlyLimitUsd: null, dailyUsageUsd: null });
-    els.stationTwoPackageList.innerHTML = emptyStateMarkup("站点二暂时不可用", message);
   }
   setStationTwoMessage(message, "error");
 }
@@ -690,9 +596,9 @@ async function loginStationTwo() {
       passwordOverride: payload.password
     });
     renderStationTwoData(data);
-    setStationTwoMessage("登录成功，已进入站点二", "success");
+    setStationTwoMessage("登录成功，已进入 YesCode", "success");
   } catch (error) {
-    renderStationTwoError(error?.message || "站点二同步失败，请稍后重试");
+    renderStationTwoError(error?.message || "YesCode 同步失败，请稍后重试");
   } finally {
     setStationTwoButtonLoading(false);
   }
@@ -710,9 +616,9 @@ async function refreshStationTwoDashboard() {
       allowLogin: false
     });
     renderStationTwoData(data);
-    setStationTwoMessage("站点二数据已更新", "success");
+    setStationTwoMessage("YesCode 数据已更新", "success");
   } catch (error) {
-    const message = error?.message || "站点二同步失败，请稍后重试";
+    const message = error?.message || "YesCode 同步失败，请稍后重试";
     if (isStationTwoAuthRequired(message)) {
       stationTwoHasSnapshot = false;
       stationTwoSession = null;
@@ -737,7 +643,7 @@ async function reloginStationTwo() {
   els.stationTwoPasswordInput.value = "";
   setStationTwoView("login");
   setStationTwoMessage("");
-  announce("已退出站点二会话");
+  announce("已退出 YesCode 会话");
 }
 
 async function maybeAutoLoginStationTwo({ force = false } = {}) {
@@ -805,7 +711,7 @@ els.toggleBtn.addEventListener("click", () => {
 els.stationTwoToggleBtn.addEventListener("click", () => {
   els.stationTwoPasswordInput.type = els.stationTwoPasswordInput.type === "password" ? "text" : "password";
   syncStationTwoToggleState();
-  announce(els.stationTwoPasswordInput.type === "text" ? "已显示站点二密码" : "已隐藏站点二密码");
+  announce(els.stationTwoPasswordInput.type === "text" ? "已显示 YesCode 密码" : "已隐藏 YesCode 密码");
 });
 
 els.stationTwoAdvancedToggle.addEventListener("click", () => {

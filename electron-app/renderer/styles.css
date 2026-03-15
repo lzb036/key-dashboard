@@ -33,6 +33,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -672,10 +676,6 @@ button {
     linear-gradient(180deg, rgba(11, 20, 34, 0.94) 0%, rgba(9, 16, 27, 0.98) 100%);
 }
 
-.station-two-control-copy {
-  max-width: 40ch;
-}
-
 .stacked-field {
   display: grid;
   gap: 10px;
@@ -884,42 +884,48 @@ button {
 
 .station-two-package-name {
   display: block;
-  margin-top: 10px;
-  margin-bottom: 8px;
-  color: var(--text-soft);
-  font-size: 15px;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-family: var(--title-font);
+  font-size: clamp(1.5rem, 2vw, 1.9rem);
   font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.station-two-session-meta {
-  margin-top: 12px;
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.7;
-  max-width: 40ch;
-}
-
-.station-two-session-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.station-two-mini-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.station-two-subscriptions-panel {
-  margin-top: 18px;
+  letter-spacing: -0.04em;
+  line-height: 1.06;
 }
 
 .station-two-dashboard-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.station-two-email-panel {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(153, 177, 214, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 46%),
+    rgba(12, 21, 35, 0.78);
+  box-shadow: var(--shadow-soft);
+}
+
+.station-two-email-label {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.station-two-email-value {
+  color: var(--text);
+  font-family: var(--title-font);
+  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  line-height: 1.18;
+  letter-spacing: -0.04em;
+  word-break: break-word;
 }
 
 .station-two-package-list {
