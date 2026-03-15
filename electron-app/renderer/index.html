@@ -133,18 +133,12 @@
 
     <div id="sourceViewNova" class="source-view" data-source-view="nova" hidden role="tabpanel" aria-labelledby="sourceTabNova">
       <section id="stationTwoLoginShell" class="panel station-two-login-shell reveal" aria-labelledby="stationTwoLoginTitle">
-        <div class="station-two-login-grid">
-          <div class="station-two-login-copy">
-            <span class="panel-chip">Sub2API</span>
-            <h2 id="stationTwoLoginTitle" class="station-two-login-title">先登录，再进入站点二仪表盘</h2>
-            <p class="station-two-login-text">这个站点需要账号登录后才能拉取套餐信息。登录成功后，我们会进入独立的信息界面；如果会话失效，也会自动退回到这里重新登录。</p>
-            <div class="station-two-login-pills">
-              <span class="soft-pill emphasis">登录态由主进程托管</span>
-              <span class="soft-pill">代理可选，默认本机 7890</span>
-            </div>
-          </div>
-
+        <div class="station-two-login-wrap">
           <div class="station-two-login-card">
+            <div class="station-two-login-head">
+              <h2 id="stationTwoLoginTitle" class="station-two-login-title">登录 YesCode</h2>
+            </div>
+
             <label class="stacked-field" for="stationTwoEmailInput">
               <span class="field-label">邮箱</span>
               <div class="input-shell">
@@ -162,17 +156,40 @@
               </div>
             </label>
 
-            <label class="stacked-field" for="stationTwoProxyInput">
-              <span class="field-label">代理</span>
-              <div class="input-shell">
-                <span class="input-icon input-icon--proxy" aria-hidden="true"></span>
-                <input id="stationTwoProxyInput" type="text" placeholder="http://127.0.0.1:7890，可留空直连" autocomplete="off" spellcheck="false">
+            <div id="stationTwoAdvancedSettings" class="advanced-settings">
+              <button id="stationTwoAdvancedToggle" class="advanced-settings-summary" type="button" aria-expanded="false" aria-controls="stationTwoAdvancedContent">
+                <span class="advanced-settings-label">高级设置</span>
+                <span class="advanced-settings-hint">需要代理时再展开</span>
+              </button>
+
+              <div id="stationTwoAdvancedContent" class="advanced-settings-content">
+                <div class="advanced-settings-body">
+                  <label class="stacked-field" for="stationTwoProxyInput">
+                    <span class="field-label">代理</span>
+                    <div class="input-shell">
+                      <span class="input-icon input-icon--proxy" aria-hidden="true"></span>
+                      <input id="stationTwoProxyInput" type="text" placeholder="http://127.0.0.1:7890，可留空直连" autocomplete="off" spellcheck="false">
+                    </div>
+                  </label>
+                </div>
               </div>
-            </label>
+            </div>
+
+            <div class="station-two-auth-options" aria-label="登录偏好">
+              <label class="station-two-option-chip" for="stationTwoRememberToggle">
+                <input id="stationTwoRememberToggle" type="checkbox">
+                <span>记住账号密码</span>
+              </label>
+
+              <label class="station-two-option-chip" for="stationTwoAutoLoginToggle">
+                <input id="stationTwoAutoLoginToggle" type="checkbox">
+                <span>自动登录</span>
+              </label>
+            </div>
 
             <button id="stationTwoLoginBtn" class="refresh-btn station-two-refresh-btn" type="button">
               <span class="btn-loader" aria-hidden="true"></span>
-              <span class="btn-label">登录并进入</span>
+              <span class="btn-label">登录</span>
             </button>
 
             <div class="message-row">

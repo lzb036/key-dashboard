@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, net, clipboard, session } = require("electron");
+const { app, BrowserWindow, ipcMain, net, clipboard, session, safeStorage } = require("electron");
+const fs = require("fs");
 const path = require("path");
 
 let win;
@@ -10,6 +11,7 @@ const STATION_TWO_REFRESH_URL = `${STATION_TWO_BASE_URL}/api/v1/auth/refresh`;
 const STATION_TWO_ACTIVE_URL = `${STATION_TWO_BASE_URL}/api/v1/subscriptions/active`;
 const STATION_TWO_SESSION_PARTITION = "persist:key-dashboard-station-two";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
+const STATION_TWO_PREFS_FILENAME = "station-two-auth.json";
 const STATION_TWO_TIMEOUT_MS = 20000;
 const TOKEN_REFRESH_BUFFER_MS = 120000;
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
@@ -37,6 +39,110 @@ const stationTwoState = {
   refreshSupported: null
 };
 let stationTwoProxyConfigured = null;
+
+function getStationTwoPreferencesPath() {
+  return path.join(app.getPath("userData"), STATION_TWO_PREFS_FILENAME);
+}
+
+function encodeStationTwoSecret(value) {
+  const text = String(value || "");
+  if (!text) return null;
+
+  if (safeStorage.isEncryptionAvailable()) {
+    return {
+      type: "safeStorage",
+      value: safeStorage.encryptString(text).toString("base64")
+    };
+  }
+
+  return {
+    type: "plain",
+    value: text
+  };
+}
+
+function decodeStationTwoSecret(payload) {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  if (payload.type === "safeStorage") {
+    try {
+      const buffer = Buffer.from(String(payload.value || ""), "base64");
+      return safeStorage.decryptString(buffer);
+    } catch {
+      return "";
+    }
+  }
+
+  if (payload.type === "plain") {
+    return String(payload.value || "");
+  }
+
+  return "";
+}
+
+function getDefaultStationTwoPreferences() {
+  return {
+    email: "",
+    password: "",
+    proxyUrl: STATION_TWO_DEFAULT_PROXY,
+    rememberPassword: false,
+    autoLogin: false
+  };
+}
+
+function readStationTwoPreferences() {
+  const defaults = getDefaultStationTwoPreferences();
+
+  try {
+    const filePath = getStationTwoPreferencesPath();
+    if (!fs.existsSync(filePath)) {
+      return defaults;
+    }
+
+    const raw = fs.readFileSync(filePath, "utf8");
+    if (!raw.trim()) {
+      return defaults;
+    }
+
+    const parsed = JSON.parse(raw);
+    const rememberPassword = Boolean(parsed.rememberPassword);
+
+    return {
+      email: rememberPassword ? String(parsed.email || "").trim() : "",
+      password: rememberPassword ? decodeStationTwoSecret(parsed.password) : "",
+      proxyUrl: typeof parsed.proxyUrl === "string" ? parsed.proxyUrl.trim() || STATION_TWO_DEFAULT_PROXY : STATION_TWO_DEFAULT_PROXY,
+      rememberPassword,
+      autoLogin: rememberPassword && Boolean(parsed.autoLogin)
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function writeStationTwoPreferences({ email, password, proxyUrl, rememberPassword, autoLogin } = {}) {
+  const filePath = getStationTwoPreferencesPath();
+  const resolvedRemember = Boolean(rememberPassword);
+  const payload = {
+    email: resolvedRemember ? String(email || "").trim() : "",
+    password: resolvedRemember ? encodeStationTwoSecret(password) : null,
+    proxyUrl: typeof proxyUrl === "string" ? proxyUrl.trim() : STATION_TWO_DEFAULT_PROXY,
+    rememberPassword: resolvedRemember,
+    autoLogin: resolvedRemember && Boolean(autoLogin)
+  };
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+
+  return {
+    email: payload.email,
+    password: resolvedRemember ? String(password || "") : "",
+    proxyUrl: payload.proxyUrl || STATION_TWO_DEFAULT_PROXY,
+    rememberPassword: payload.rememberPassword,
+    autoLogin: payload.autoLogin
+  };
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -700,6 +806,14 @@ ipcMain.handle("fetch-dashboard", (_event, { authorization, page, limit } = {}) 
 
 ipcMain.handle("fetch-station-two-dashboard", (_event, payload = {}) => {
   return fetchStationTwoDashboard(payload);
+});
+
+ipcMain.handle("get-station-two-preferences", () => {
+  return readStationTwoPreferences();
+});
+
+ipcMain.handle("save-station-two-preferences", (_event, payload = {}) => {
+  return writeStationTwoPreferences(payload);
 });
 
 ipcMain.handle("clear-station-two-session", () => {

@@ -46,7 +46,11 @@ const els = {
   stationTwoProxyBadge: document.getElementById("stationTwoProxyBadge"),
   stationTwoEmailInput: document.getElementById("stationTwoEmailInput"),
   stationTwoPasswordInput: document.getElementById("stationTwoPasswordInput"),
+  stationTwoAdvancedSettings: document.getElementById("stationTwoAdvancedSettings"),
+  stationTwoAdvancedToggle: document.getElementById("stationTwoAdvancedToggle"),
   stationTwoProxyInput: document.getElementById("stationTwoProxyInput"),
+  stationTwoRememberToggle: document.getElementById("stationTwoRememberToggle"),
+  stationTwoAutoLoginToggle: document.getElementById("stationTwoAutoLoginToggle"),
   stationTwoToggleBtn: document.getElementById("stationTwoToggleBtn"),
   stationTwoRefreshBtn: document.getElementById("stationTwoRefreshBtn"),
   stationTwoRefreshLabel: document.querySelector("#stationTwoRefreshBtn .btn-label"),
@@ -82,6 +86,7 @@ let stationTwoHasSnapshot = false;
 let stationTwoLoading = false;
 let stationTwoSession = null;
 let stationTwoView = "login";
+let stationTwoAutoLoginAttempted = false;
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -156,8 +161,29 @@ function setStationTwoButtonLoading(loading) {
   els.stationTwoRefreshBtn.disabled = stationTwoLoading;
   els.stationTwoLoginBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "login");
   els.stationTwoRefreshBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "dashboard");
-  els.stationTwoLoginLabel.textContent = stationTwoLoading && stationTwoView === "login" ? "登录中..." : "登录并进入";
+  els.stationTwoLoginLabel.textContent = stationTwoLoading && stationTwoView === "login" ? "登录中..." : "登录";
   els.stationTwoRefreshLabel.textContent = stationTwoLoading && stationTwoView === "dashboard" ? "刷新中..." : "刷新站点二";
+}
+
+function getStationTwoPreferencePayload({ passwordOverride } = {}) {
+  const rememberPassword = els.stationTwoRememberToggle.checked;
+  const autoLogin = rememberPassword && els.stationTwoAutoLoginToggle.checked;
+
+  return {
+    email: rememberPassword ? els.stationTwoEmailInput.value.trim() : "",
+    password: rememberPassword ? String((passwordOverride ?? els.stationTwoPasswordInput.value) || "") : "",
+    proxyUrl: els.stationTwoProxyInput.value.trim() || STATION_TWO_DEFAULT_PROXY,
+    rememberPassword,
+    autoLogin
+  };
+}
+
+async function persistStationTwoPreferences(options = {}) {
+  if (!window.api || typeof window.api.saveStationTwoPreferences !== "function") {
+    return null;
+  }
+
+  return window.api.saveStationTwoPreferences(getStationTwoPreferencePayload(options));
 }
 
 function emptyStateMarkup(title, text) {
@@ -244,6 +270,10 @@ function setActiveSource(sourceKey, { persist = true } = {}) {
   }
   if (!els.linkModal.hidden) closeLinkModal();
   announce(`已切换到${SOURCE_CONFIG[source].title}`);
+
+  if (source === "nova") {
+    void maybeAutoLoginStationTwo({ force: true });
+  }
 }
 
 async function copyTextToClipboard(text) {
@@ -465,6 +495,24 @@ function isStationTwoAuthRequired(message) {
   return /登录已失效|重新登录|AUTH_REQUIRED/i.test(String(message || ""));
 }
 
+function syncStationTwoPreferenceState() {
+  if (!els.stationTwoRememberToggle.checked) {
+    els.stationTwoAutoLoginToggle.checked = false;
+  }
+
+  els.stationTwoAutoLoginToggle.disabled = !els.stationTwoRememberToggle.checked;
+  els.stationTwoAutoLoginToggle.closest(".station-two-option-chip")?.classList.toggle(
+    "is-disabled",
+    els.stationTwoAutoLoginToggle.disabled
+  );
+}
+
+function setStationTwoAdvancedSettingsOpen(open) {
+  const isOpen = Boolean(open);
+  els.stationTwoAdvancedSettings.classList.toggle("is-open", isOpen);
+  els.stationTwoAdvancedToggle.setAttribute("aria-expanded", String(isOpen));
+}
+
 function getStationTwoStrategyInfo(strategy, expiresAt = null) {
   const suffix = expiresAt ? `，令牌预计于 ${fmtDate(expiresAt)} 到期` : "";
   if (strategy === "refresh") {
@@ -638,6 +686,9 @@ async function loginStationTwo() {
       if (!els.stationTwoEmailInput.value.trim()) els.stationTwoEmailInput.value = emailToStore;
     }
     localStorage.setItem(STATION_TWO_PROXY_KEY, payload.proxyUrl);
+    await persistStationTwoPreferences({
+      passwordOverride: payload.password
+    });
     renderStationTwoData(data);
     setStationTwoMessage("登录成功，已进入站点二", "success");
   } catch (error) {
@@ -682,10 +733,54 @@ async function reloginStationTwo() {
   }
   stationTwoHasSnapshot = false;
   stationTwoSession = null;
+  stationTwoAutoLoginAttempted = true;
   els.stationTwoPasswordInput.value = "";
   setStationTwoView("login");
   setStationTwoMessage("");
   announce("已退出站点二会话");
+}
+
+async function maybeAutoLoginStationTwo({ force = false } = {}) {
+  if (stationTwoAutoLoginAttempted) return;
+  if (!els.stationTwoAutoLoginToggle.checked) return;
+  if (!els.stationTwoEmailInput.value.trim() || !els.stationTwoPasswordInput.value) return;
+  if (!force && currentSource !== "nova") return;
+
+  stationTwoAutoLoginAttempted = true;
+  await loginStationTwo();
+}
+
+async function initializeStationTwoPreferences() {
+  let preferences = null;
+
+  if (window.api && typeof window.api.getStationTwoPreferences === "function") {
+    try {
+      preferences = await window.api.getStationTwoPreferences();
+    } catch {
+      preferences = null;
+    }
+  }
+
+  const legacyEmail = localStorage.getItem(STATION_TWO_EMAIL_KEY) || "";
+  const legacyProxy = localStorage.getItem(STATION_TWO_PROXY_KEY);
+  const resolvedEmail = String(preferences?.email || legacyEmail || "").trim();
+  const resolvedPassword = String(preferences?.password || "");
+  const resolvedProxy = typeof preferences?.proxyUrl === "string"
+    ? preferences.proxyUrl.trim() || STATION_TWO_DEFAULT_PROXY
+    : legacyProxy !== null
+      ? legacyProxy
+      : STATION_TWO_DEFAULT_PROXY;
+
+  els.stationTwoEmailInput.value = resolvedEmail;
+  els.stationTwoPasswordInput.value = resolvedPassword;
+  els.stationTwoProxyInput.value = resolvedProxy;
+  els.stationTwoRememberToggle.checked = Boolean(preferences?.rememberPassword);
+  els.stationTwoAutoLoginToggle.checked = Boolean(preferences?.autoLogin && preferences?.rememberPassword);
+  syncStationTwoPreferenceState();
+
+  if (currentSource === "nova") {
+    await maybeAutoLoginStationTwo({ force: true });
+  }
 }
 
 function attachPointerGlow(panel) {
@@ -711,6 +806,28 @@ els.stationTwoToggleBtn.addEventListener("click", () => {
   els.stationTwoPasswordInput.type = els.stationTwoPasswordInput.type === "password" ? "text" : "password";
   syncStationTwoToggleState();
   announce(els.stationTwoPasswordInput.type === "text" ? "已显示站点二密码" : "已隐藏站点二密码");
+});
+
+els.stationTwoAdvancedToggle.addEventListener("click", () => {
+  const willOpen = !els.stationTwoAdvancedSettings.classList.contains("is-open");
+  setStationTwoAdvancedSettingsOpen(willOpen);
+});
+
+els.stationTwoRememberToggle.addEventListener("change", async () => {
+  if (!els.stationTwoRememberToggle.checked) {
+    stationTwoAutoLoginAttempted = false;
+  }
+  syncStationTwoPreferenceState();
+  await persistStationTwoPreferences();
+});
+
+els.stationTwoAutoLoginToggle.addEventListener("change", async () => {
+  if (els.stationTwoAutoLoginToggle.checked) {
+    els.stationTwoRememberToggle.checked = true;
+    stationTwoAutoLoginAttempted = false;
+  }
+  syncStationTwoPreferenceState();
+  await persistStationTwoPreferences();
 });
 
 els.refreshBtn.addEventListener("click", refresh);
@@ -767,20 +884,16 @@ els.sourceTabs.forEach((tab) => {
 const saved = localStorage.getItem(STORAGE_KEY);
 if (saved) els.keyInput.value = saved;
 
-const savedStationTwoEmail = localStorage.getItem(STATION_TWO_EMAIL_KEY);
-if (savedStationTwoEmail) els.stationTwoEmailInput.value = savedStationTwoEmail;
-
-const savedStationTwoProxy = localStorage.getItem(STATION_TWO_PROXY_KEY);
-els.stationTwoProxyInput.value = savedStationTwoProxy !== null ? savedStationTwoProxy : STATION_TWO_DEFAULT_PROXY;
-
 const savedSource = localStorage.getItem(SOURCE_STORAGE_KEY);
 if (savedSource && SOURCE_CONFIG[savedSource]) currentSource = savedSource;
 
 syncToggleState();
 syncStationTwoToggleState();
-requestAnimationFrame(() => {
+setStationTwoAdvancedSettingsOpen(false);
+requestAnimationFrame(async () => {
   document.body.classList.add("ready");
   renderIdleState();
   renderStationTwoIdleState();
+  await initializeStationTwoPreferences();
   setActiveSource(currentSource, { persist: false });
 });
