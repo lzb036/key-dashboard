@@ -32,6 +32,11 @@ const els = {
   paginationMeta: document.getElementById("paginationMeta"),
   prevPageBtn: document.getElementById("prevPageBtn"),
   nextPageBtn: document.getElementById("nextPageBtn"),
+  stationTwoLoginShell: document.getElementById("stationTwoLoginShell"),
+  stationTwoDashboardShell: document.getElementById("stationTwoDashboardShell"),
+  stationTwoLoginBtn: document.getElementById("stationTwoLoginBtn"),
+  stationTwoLoginLabel: document.querySelector("#stationTwoLoginBtn .btn-label"),
+  stationTwoLoginMsg: document.getElementById("stationTwoLoginMsg"),
   stationTwoPackageName: document.getElementById("stationTwoPackageName"),
   stationTwoRemainingAmount: document.getElementById("stationTwoRemainingAmount"),
   stationTwoMonthlyLimitAmount: document.getElementById("stationTwoMonthlyLimitAmount"),
@@ -45,7 +50,8 @@ const els = {
   stationTwoToggleBtn: document.getElementById("stationTwoToggleBtn"),
   stationTwoRefreshBtn: document.getElementById("stationTwoRefreshBtn"),
   stationTwoRefreshLabel: document.querySelector("#stationTwoRefreshBtn .btn-label"),
-  stationTwoMsg: document.getElementById("stationTwoMsg"),
+  stationTwoDashboardMsg: document.getElementById("stationTwoDashboardMsg"),
+  stationTwoReloginBtn: document.getElementById("stationTwoReloginBtn"),
   stationTwoEmailReadout: document.getElementById("stationTwoEmailReadout"),
   stationTwoProxyReadout: document.getElementById("stationTwoProxyReadout"),
   stationTwoStrategyReadout: document.getElementById("stationTwoStrategyReadout"),
@@ -75,6 +81,7 @@ let currentSource = "cto";
 let stationTwoHasSnapshot = false;
 let stationTwoLoading = false;
 let stationTwoSession = null;
+let stationTwoView = "login";
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -128,8 +135,10 @@ function setMsg(text, tone = "") {
 }
 
 function setStationTwoMessage(text, tone = "") {
-  els.stationTwoMsg.textContent = text;
-  els.stationTwoMsg.className = "msg" + (tone ? ` ${tone}` : "");
+  [els.stationTwoLoginMsg, els.stationTwoDashboardMsg].forEach((node) => {
+    node.textContent = text;
+    node.className = "msg" + (tone ? ` ${tone}` : "");
+  });
   if (text) announce(text);
 }
 
@@ -143,9 +152,12 @@ function setButtonLoading(loading) {
 
 function setStationTwoButtonLoading(loading) {
   stationTwoLoading = Boolean(loading);
+  els.stationTwoLoginBtn.disabled = stationTwoLoading;
   els.stationTwoRefreshBtn.disabled = stationTwoLoading;
-  els.stationTwoRefreshBtn.classList.toggle("is-loading", stationTwoLoading);
-  els.stationTwoRefreshLabel.textContent = stationTwoLoading ? "同步中..." : stationTwoHasSnapshot ? "刷新站点二" : "登录并刷新";
+  els.stationTwoLoginBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "login");
+  els.stationTwoRefreshBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "dashboard");
+  els.stationTwoLoginLabel.textContent = stationTwoLoading && stationTwoView === "login" ? "登录中..." : "登录并进入";
+  els.stationTwoRefreshLabel.textContent = stationTwoLoading && stationTwoView === "dashboard" ? "刷新中..." : "刷新站点二";
 }
 
 function emptyStateMarkup(title, text) {
@@ -441,6 +453,18 @@ function syncStationTwoToggleState() {
   els.stationTwoToggleBtn.setAttribute("aria-label", `${isVisible ? "隐藏" : "显示"}站点二密码`);
 }
 
+function setStationTwoView(view) {
+  const resolvedView = view === "dashboard" ? "dashboard" : "login";
+  stationTwoView = resolvedView;
+  els.stationTwoLoginShell.hidden = resolvedView !== "login";
+  els.stationTwoDashboardShell.hidden = resolvedView !== "dashboard";
+  setStationTwoButtonLoading(false);
+}
+
+function isStationTwoAuthRequired(message) {
+  return /登录已失效|重新登录|AUTH_REQUIRED/i.test(String(message || ""));
+}
+
 function getStationTwoStrategyInfo(strategy, expiresAt = null) {
   const suffix = expiresAt ? `，令牌预计于 ${fmtDate(expiresAt)} 到期` : "";
   if (strategy === "refresh") {
@@ -533,6 +557,9 @@ function renderStationTwoIdleState() {
   if (!stationTwoHasSnapshot) {
     setStationTwoSummaryValues({ title: "等待登录", remainingUsd: null, monthlyLimitUsd: null, dailyUsageUsd: null });
     els.stationTwoPackageList.innerHTML = emptyStateMarkup("登录后查看套餐", "同步成功后，这里会列出活跃套餐的名称、剩余额度、总额度和今日消费。");
+    setStationTwoView("login");
+  } else {
+    setStationTwoView("dashboard");
   }
   syncStationTwoSessionChrome({
     email: els.stationTwoEmailInput.value.trim(),
@@ -571,6 +598,7 @@ function renderStationTwoData(data) {
   });
   renderStationTwoPackageList(summary.items);
   syncStationTwoSessionChrome(stationTwoSession);
+  setStationTwoView("dashboard");
 }
 
 function renderStationTwoError(message) {
@@ -581,17 +609,29 @@ function renderStationTwoError(message) {
   setStationTwoMessage(message, "error");
 }
 
-async function refreshStationTwo() {
+async function loginStationTwo() {
   const payload = {
     email: els.stationTwoEmailInput.value.trim(),
     password: els.stationTwoPasswordInput.value,
     proxyUrl: els.stationTwoProxyInput.value.trim()
   };
+  if (!payload.email || !payload.password) {
+    setStationTwoMessage("请输入邮箱和密码", "error");
+    if (!payload.email) {
+      els.stationTwoEmailInput.focus();
+    } else {
+      els.stationTwoPasswordInput.focus();
+    }
+    return;
+  }
+  setStationTwoView("login");
   setStationTwoButtonLoading(true);
   setStationTwoMessage("");
-  renderStationTwoLoadingState();
   try {
-    const data = await window.api.fetchStationTwoDashboard(payload);
+    const data = await window.api.fetchStationTwoDashboard({
+      ...payload,
+      allowLogin: true
+    });
     const emailToStore = String(data?.session?.email || payload.email || "").trim();
     if (emailToStore) {
       localStorage.setItem(STATION_TWO_EMAIL_KEY, emailToStore);
@@ -599,12 +639,53 @@ async function refreshStationTwo() {
     }
     localStorage.setItem(STATION_TWO_PROXY_KEY, payload.proxyUrl);
     renderStationTwoData(data);
-    setStationTwoMessage("站点二数据已更新", "success");
+    setStationTwoMessage("登录成功，已进入站点二", "success");
   } catch (error) {
     renderStationTwoError(error?.message || "站点二同步失败，请稍后重试");
   } finally {
     setStationTwoButtonLoading(false);
   }
+}
+
+async function refreshStationTwoDashboard() {
+  setStationTwoView("dashboard");
+  setStationTwoButtonLoading(true);
+  setStationTwoMessage("");
+  renderStationTwoLoadingState();
+  try {
+    const data = await window.api.fetchStationTwoDashboard({
+      email: els.stationTwoEmailInput.value.trim(),
+      proxyUrl: els.stationTwoProxyInput.value.trim(),
+      allowLogin: false
+    });
+    renderStationTwoData(data);
+    setStationTwoMessage("站点二数据已更新", "success");
+  } catch (error) {
+    const message = error?.message || "站点二同步失败，请稍后重试";
+    if (isStationTwoAuthRequired(message)) {
+      stationTwoHasSnapshot = false;
+      stationTwoSession = null;
+      els.stationTwoPasswordInput.value = "";
+      setStationTwoView("login");
+      setStationTwoMessage("登录已过期，请重新登录", "error");
+      return;
+    }
+    renderStationTwoError(message);
+  } finally {
+    setStationTwoButtonLoading(false);
+  }
+}
+
+async function reloginStationTwo() {
+  if (window.api && typeof window.api.clearStationTwoSession === "function") {
+    await window.api.clearStationTwoSession();
+  }
+  stationTwoHasSnapshot = false;
+  stationTwoSession = null;
+  els.stationTwoPasswordInput.value = "";
+  setStationTwoView("login");
+  setStationTwoMessage("");
+  announce("已退出站点二会话");
 }
 
 function attachPointerGlow(panel) {
@@ -643,15 +724,17 @@ els.nextPageBtn.addEventListener("click", () => {
   if (!els.nextPageBtn.disabled) refresh(currentPage + 1);
 });
 
-els.stationTwoRefreshBtn.addEventListener("click", refreshStationTwo);
+els.stationTwoLoginBtn.addEventListener("click", loginStationTwo);
+els.stationTwoRefreshBtn.addEventListener("click", refreshStationTwoDashboard);
+els.stationTwoReloginBtn.addEventListener("click", reloginStationTwo);
 els.stationTwoEmailInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") refreshStationTwo();
+  if (event.key === "Enter") loginStationTwo();
 });
 els.stationTwoPasswordInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") refreshStationTwo();
+  if (event.key === "Enter") loginStationTwo();
 });
 els.stationTwoProxyInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") refreshStationTwo();
+  if (event.key === "Enter") loginStationTwo();
 });
 
 els.viewOfficialBtn.addEventListener("click", () => openLinkModal("official"));

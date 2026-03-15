@@ -240,10 +240,30 @@ async function ensureStationTwoProxy(proxyUrl) {
   return targetSession;
 }
 
-function clearStationTwoTokens() {
+function buildStationTwoAuthRequiredError(message = "站点二登录已失效，请重新登录") {
+  const error = new Error(message);
+  error.code = "STATION_TWO_AUTH_REQUIRED";
+  return error;
+}
+
+function clearStationTwoTokens({ clearPassword = false } = {}) {
   stationTwoState.accessToken = "";
   stationTwoState.refreshToken = "";
   stationTwoState.expiresAt = 0;
+  if (clearPassword) {
+    stationTwoState.password = "";
+  }
+}
+
+function clearStationTwoSession({ clearCredentials = false } = {}) {
+  clearStationTwoTokens({
+    clearPassword: clearCredentials
+  });
+  stationTwoState.refreshSupported = null;
+  if (clearCredentials) {
+    stationTwoState.email = "";
+    stationTwoState.proxyUrl = STATION_TWO_DEFAULT_PROXY;
+  }
 }
 
 function getStationTwoTimezone() {
@@ -356,13 +376,18 @@ function unwrapStationTwoPayload(bodyText) {
 function toStationTwoUserFacingError(error) {
   const message = error && error.message ? error.message : "站点二请求失败";
   const statusCode = error && error.statusCode ? Number(error.statusCode) : 0;
+  const code = error && error.code ? String(error.code) : "";
 
   if (isRetryableNetworkError(error)) {
     return new Error("站点二网络请求失败，请检查代理、VPN 或本地网络设置");
   }
 
+  if (code === "STATION_TWO_AUTH_REQUIRED") {
+    return buildStationTwoAuthRequiredError(message);
+  }
+
   if (statusCode === 401 || statusCode === 403 || /^HTTP 401\b|^HTTP 403\b/i.test(message)) {
-    return new Error("站点二登录已失效，请重新输入邮箱和密码");
+    return buildStationTwoAuthRequiredError();
   }
 
   if (statusCode === 404 || /^HTTP 404\b/i.test(message)) {
@@ -527,7 +552,7 @@ async function refreshStationTwoToken(proxyUrl = stationTwoState.proxyUrl) {
   return payload;
 }
 
-async function ensureStationTwoSession({ email, password, proxyUrl } = {}) {
+async function ensureStationTwoSession({ email, password, proxyUrl, allowLogin = false } = {}) {
   setStationTwoCredentials({ email, password, proxyUrl });
 
   if (hasValidStationTwoAccessToken()) {
@@ -541,9 +566,18 @@ async function ensureStationTwoSession({ email, password, proxyUrl } = {}) {
     } catch (error) {
       if (Number(error.statusCode) === 404) {
         stationTwoState.refreshSupported = false;
+        clearStationTwoTokens();
+      } else if (Number(error.statusCode) === 401 || Number(error.statusCode) === 403) {
+        clearStationTwoTokens();
+      } else {
+        throw error;
       }
-      clearStationTwoTokens();
     }
+  }
+
+  if (!allowLogin) {
+    clearStationTwoTokens();
+    throw buildStationTwoAuthRequiredError();
   }
 
   await loginStationTwo({
@@ -555,7 +589,7 @@ async function ensureStationTwoSession({ email, password, proxyUrl } = {}) {
   return stationTwoState.accessToken;
 }
 
-async function fetchStationTwoDashboard({ email, password, proxyUrl } = {}) {
+async function fetchStationTwoDashboard({ email, password, proxyUrl, allowLogin = false } = {}) {
   setStationTwoCredentials({ email, password, proxyUrl });
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -563,7 +597,8 @@ async function fetchStationTwoDashboard({ email, password, proxyUrl } = {}) {
       const accessToken = await ensureStationTwoSession({
         email: stationTwoState.email,
         password: stationTwoState.password,
-        proxyUrl: stationTwoState.proxyUrl
+        proxyUrl: stationTwoState.proxyUrl,
+        allowLogin
       });
       const timezone = encodeURIComponent(getStationTwoTimezone());
       const { bodyText } = await requestStationTwo(`${STATION_TWO_ACTIVE_URL}?timezone=${timezone}`, {
@@ -596,8 +631,11 @@ async function fetchStationTwoDashboard({ email, password, proxyUrl } = {}) {
     } catch (error) {
       const statusCode = Number(error && error.statusCode ? error.statusCode : 0);
       if ((statusCode === 401 || statusCode === 403) && attempt === 1) {
-        clearStationTwoTokens();
-        continue;
+        clearStationTwoSession();
+        if (allowLogin) {
+          continue;
+        }
+        throw buildStationTwoAuthRequiredError();
       }
 
       throw toStationTwoUserFacingError(error);
@@ -662,6 +700,11 @@ ipcMain.handle("fetch-dashboard", (_event, { authorization, page, limit } = {}) 
 
 ipcMain.handle("fetch-station-two-dashboard", (_event, payload = {}) => {
   return fetchStationTwoDashboard(payload);
+});
+
+ipcMain.handle("clear-station-two-session", () => {
+  clearStationTwoSession();
+  return true;
 });
 
 ipcMain.handle("copy-text", (_event, { text } = {}) => {
