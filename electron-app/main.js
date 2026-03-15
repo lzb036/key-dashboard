@@ -4,11 +4,10 @@ const path = require("path");
 let win;
 
 const DASHBOARD_URL = "https://cto.hxrra.com/api/public/dashboard";
-const DASHBOARD_REQUEST_BODY = JSON.stringify({
-  range: "month",
-  consumption_page: 1,
-  consumption_limit: 20
-});
+const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
+const DASHBOARD_RANGE = "day";
+const DEFAULT_CONSUMPTION_PAGE = 1;
+const DEFAULT_CONSUMPTION_LIMIT = 10;
 const RETRYABLE_ERROR_CODES = new Set([
   "ECONNRESET",
   "ETIMEDOUT",
@@ -23,6 +22,19 @@ const RETRYABLE_ERROR_CODES = new Set([
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildDashboardRequestBody({ page, limit } = {}) {
+  return JSON.stringify({
+    range: DASHBOARD_RANGE,
+    consumption_page: normalizePositiveInt(page, DEFAULT_CONSUMPTION_PAGE),
+    consumption_limit: normalizePositiveInt(limit, DEFAULT_CONSUMPTION_LIMIT)
+  });
 }
 
 function isRetryableNetworkError(error) {
@@ -70,20 +82,31 @@ function toUserFacingError(error) {
   return new Error(message);
 }
 
-function requestDashboardOnce(authorization) {
+function requestDashboardOnce(authorization, options = {}, attempt = 1) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let responseData = "";
+    let timeoutId = null;
+    const requestBody = buildDashboardRequestBody(options);
+
+    const clearRequestTimeout = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
 
     const finishResolve = (value) => {
       if (settled) return;
       settled = true;
+      clearRequestTimeout();
       resolve(value);
     };
 
     const finishReject = (error) => {
       if (settled) return;
       settled = true;
+      clearRequestTimeout();
       reject(error);
     };
 
@@ -96,7 +119,6 @@ function requestDashboardOnce(authorization) {
     request.setHeader("Content-Type", "application/json");
     request.setHeader("Accept", "application/json");
     request.setHeader("Accept-Encoding", "identity");
-    request.setHeader("Content-Length", Buffer.byteLength(DASHBOARD_REQUEST_BODY).toString());
     request.setHeader("Authorization", authorization);
     request.setHeader("Origin", "https://cto.hxrra.com");
     request.setHeader("Referer", "https://cto.hxrra.com/user/center");
@@ -124,24 +146,25 @@ function requestDashboardOnce(authorization) {
     });
 
     request.on("error", (error) => finishReject(error));
-    request.setTimeout(15000, () => {
+
+    timeoutId = setTimeout(() => {
       const timeoutError = new Error("请求超时");
       timeoutError.code = "ETIMEDOUT";
-      request.abort();
       finishReject(timeoutError);
-    });
+      request.abort();
+    }, 15000);
 
-    request.write(DASHBOARD_REQUEST_BODY);
+    request.write(requestBody);
     request.end();
   });
 }
 
-async function fetchDashboardWithRetry(authorization) {
+async function fetchDashboardWithRetry(authorization, options = {}) {
   let lastError;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      return await requestDashboardOnce(authorization);
+      return await requestDashboardOnce(authorization, options, attempt);
     } catch (error) {
       lastError = error;
 
@@ -157,35 +180,55 @@ async function fetchDashboardWithRetry(authorization) {
   throw toUserFacingError(lastError);
 }
 
-function createWindow() {
+async function createWindow() {
   win = new BrowserWindow({
-    width: 1100,
-    height: 750,
-    minWidth: 800,
-    minHeight: 600,
+    width: 1280,
+    height: 860,
+    minWidth: 980,
+    minHeight: 700,
+    show: true,
+    center: true,
+    autoHideMenuBar: true,
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#f2eadf",
-      symbolColor: "#201912",
-      height: 40
+      color: "#08111d",
+      symbolColor: "#eff4ff",
+      height: 46
     },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false
     },
-    backgroundColor: "#f2eadf"
+    backgroundColor: "#08111d"
   });
 
-  win.loadFile(path.join(__dirname, "renderer/index.html"));
+  if (DEV_SERVER_URL) {
+    await win.loadURL(DEV_SERVER_URL);
+  } else {
+    await win.loadFile(path.join(__dirname, "renderer/index.html"));
+  }
+
+  win.show();
+  win.focus();
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  await createWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch((error) => {
+        console.error("Failed to recreate window:", error);
+      });
+    }
+  });
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-ipcMain.handle("fetch-dashboard", (_event, { authorization }) => {
-  return fetchDashboardWithRetry(authorization);
+ipcMain.handle("fetch-dashboard", (_event, { authorization, page, limit } = {}) => {
+  return fetchDashboardWithRetry(authorization, { page, limit });
 });

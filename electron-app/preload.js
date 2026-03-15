@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
-  fetchDashboard: (authorization) =>
-    ipcRenderer.invoke("fetch-dashboard", { authorization })
+  fetchDashboard: (authorization, options = {}) =>
+    ipcRenderer.invoke("fetch-dashboard", { authorization, ...options })
 });

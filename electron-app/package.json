@@ -5,11 +5,19 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite --config vite.config.js",
+    "dev:electron": "wait-on tcp:127.0.0.1:5173 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 nodemon --watch . --ext js,cjs,mjs,json --ignore renderer/** --ignore node_modules/** --exec \"electron .\"",
     "build": "electron-builder --win --x64"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
     "electron": "^28.0.0",
-    "electron-builder": "^24.0.0"
+    "electron-builder": "^24.0.0",
+    "nodemon": "^3.1.14",
+    "vite": "^8.0.0",
+    "wait-on": "^9.0.4"
   },
   "build": {
     "appId": "com.key.dashboard",
