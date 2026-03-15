@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: rgba(255,255,255,0.07);
+      --text: #e8eaf0;
+      --muted: #6b7280;
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,0.25);
+      --green: #10b981;
+      --green-glow: rgba(16,185,129,0.2);
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* titlebar drag region */
+    .titlebar {
+      height: 40px;
+      -webkit-app-region: drag;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .titlebar-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* scrollbar */
+    .content::-webkit-scrollbar { width: 6px; }
+    .content::-webkit-scrollbar-track { background: transparent; }
+    .content::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 99px; }
+
+    .top-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+
+    /* balance card */
+    .balance-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: linear-gradient(135deg, #1a1d27 0%, #1e2035 100%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .balance-card::before {
+      content: "";
+      position: absolute;
+      top: -40px; right: -40px;
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      background: var(--accent-glow);
+      filter: blur(40px);
+      pointer-events: none;
+    }
+
+    .card-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .balance-amount {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .balance-amount.empty {
+      font-size: 1.4rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .balance-meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 4px;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .meta-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .meta-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 700;
+      width: fit-content;
+    }
+
+    .status-badge.active {
+      background: var(--green-glow);
+      color: var(--green);
+    }
+
+    .status-badge.inactive {
+      background: rgba(239,68,68,0.15);
+      color: var(--red);
+    }
+
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* input card */
+    .input-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .input-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0 12px;
+      transition: border-color 0.15s;
+    }
+
+    .input-row:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .input-row input {
+      flex: 1;
+      background: transparent;
+      border: 0;
+      outline: 0;
+      color: var(--text);
+      font: inherit;
+      font-size: 14px;
+      padding: 12px 0;
+      min-width: 0;
+    }
+
+    .input-row input::placeholder { color: var(--muted); }
+
+    .toggle-btn {
+      background: transparent;
+      border: 0;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+
+    .toggle-btn:hover { color: var(--text); background: var(--border); }
+
+    .refresh-btn {
+      width: 100%;
+      padding: 13px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.15s;
+      box-shadow: 0 8px 24px var(--accent-glow);
+    }
+
+    .refresh-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .refresh-btn:disabled { opacity: 0.5; cursor: wait; transform: none; }
+
+    .msg {
+      font-size: 12px;
+      font-weight: 600;
+      min-height: 16px;
+      color: var(--muted);
+    }
+
+    .msg.error { color: var(--red); }
+    .msg.success { color: var(--green); }
+
+    /* stats row */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stat-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .stat-value.green { color: var(--green); }
+    .stat-value.amber { color: var(--amber); }
+    .stat-value.accent { color: var(--accent); }
+
+    /* table */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .table-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .table-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .table-count {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--surface2);
+      padding: 3px 10px;
+      border-radius: 99px;
+    }
+
+    .table-cols {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr 0.8fr 0.8fr;
+      gap: 12px;
+      padding: 10px 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .table-body { }
+
+    .table-row {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr 0.8fr 0.8fr;
+      gap: 12px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+      transition: background 0.12s;
+    }
+
+    .table-row:last-child { border-bottom: 0; }
+    .table-row:hover { background: var(--surface2); }
+
+    .row-time {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .row-model {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-glow);
+      padding: 4px 10px;
+      border-radius: 99px;
+      width: fit-content;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .row-requests {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .row-cost {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--amber);
+      text-align: right;
+    }
+
+    .empty-state {
+      padding: 48px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface2) 25%, var(--surface) 50%, var(--surface2) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 6px;
+      color: transparent;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    @media (max-width: 760px) {
+      .top-grid { grid-template-columns: 1fr; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .table-cols, .table-row { grid-template-columns: 1.4fr 1fr 0.7fr; }
+      .table-cols span:nth-child(3),
+      .table-row .row-requests { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <span class="titlebar-title">Key Dashboard</span>
+  </div>
+
+  <div class="content">
+    <div class="top-grid">
+      <!-- balance -->
+      <div class="card balance-card">
+        <div class="card-label">当前余额</div>
+        <div id="balanceAmount" class="balance-amount empty">暂无数据</div>
+        <div id="statusBadge"></div>
+        <div id="balanceMeta" class="balance-meta"></div>
+      </div>
+
+      <!-- input -->
+      <div class="card input-card">
+        <div class="card-label">API Key</div>
+        <div class="input-group">
+          <div class="input-row">
+            <input id="keyInput" type="password" placeholder="输入 sk-..." autocomplete="off" spellcheck="false">
+            <button id="toggleBtn" class="toggle-btn">显示</button>
+          </div>
+        </div>
+        <button id="refreshBtn" class="refresh-btn">刷新数据</button>
+        <div id="msg" class="msg"></div>
+      </div>
+    </div>
+
+    <!-- stats -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="card-label">本月消费</div>
+        <div id="statCost" class="stat-value amber">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="card-label">累计充值</div>
+        <div id="statRecharged" class="stat-value green">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="card-label">请求次数</div>
+        <div id="statRequests" class="stat-value accent">—</div>
+      </div>
+    </div>
+
+    <!-- table -->
+    <div class="table-card">
+      <div class="table-head">
+        <span class="table-title">消费记录</span>
+        <span id="tableCount" class="table-count">0 条</span>
+      </div>
+      <div class="table-cols">
+        <span>时间</span>
+        <span>模型</span>
+        <span style="text-align:center">请求数</span>
+        <span style="text-align:right">消费</span>
+      </div>
+      <div id="tableBody" class="table-body">
+        <div class="empty-state">输入 API Key 后点击刷新</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
