@@ -1,20 +1,40 @@
 const STORAGE_KEY = "cto_dashboard_key";
 const PAGE_LIMIT = 10;
+const RESOURCE_LINKS = {
+  official: {
+    title: "官网地址",
+    url: "https://cto.hxrra.com"
+  },
+  guide: {
+    title: "用法地址",
+    url: "https://www.notion.so/Ai-3006eac3699e800ea1b0ffbf02419c74?source=copy_link"
+  }
+};
 
 const els = {
   balanceAmount: document.getElementById("balanceAmount"),
   totalConsumedAmount: document.getElementById("totalConsumedAmount"),
   totalRechargedAmount: document.getElementById("totalRechargedAmount"),
+  viewOfficialBtn: document.getElementById("viewOfficialBtn"),
+  viewGuideBtn: document.getElementById("viewGuideBtn"),
   keyInput: document.getElementById("keyInput"),
   toggleBtn: document.getElementById("toggleBtn"),
   refreshBtn: document.getElementById("refreshBtn"),
   refreshLabel: document.querySelector("#refreshBtn .btn-label"),
   msg: document.getElementById("msg"),
+  distributionBody: document.getElementById("distributionBody"),
   tableBody: document.getElementById("tableBody"),
   tablePagination: document.getElementById("tablePagination"),
   paginationMeta: document.getElementById("paginationMeta"),
   prevPageBtn: document.getElementById("prevPageBtn"),
   nextPageBtn: document.getElementById("nextPageBtn"),
+  linkModal: document.getElementById("linkModal"),
+  linkModalBackdrop: document.getElementById("linkModalBackdrop"),
+  linkModalTitle: document.getElementById("linkModalTitle"),
+  linkModalUrl: document.getElementById("linkModalUrl"),
+  linkModalCloseBtn: document.getElementById("linkModalCloseBtn"),
+  copyLinkBtn: document.getElementById("copyLinkBtn"),
+  copyLinkStatus: document.getElementById("copyLinkStatus"),
   srAnnounce: document.getElementById("srAnnounce")
 };
 
@@ -25,6 +45,8 @@ let totalItems = 0;
 let totalPages = 1;
 let currentPageSize = PAGE_LIMIT;
 let lastSubmittedKey = "";
+let activeResourceKey = "";
+let copyStatusTimer = null;
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -131,6 +153,26 @@ function skeletonRowMarkup(index) {
   `;
 }
 
+function distributionSkeletonMarkup(index) {
+  return `
+    <article class="distribution-card" style="--delay: ${index * 36}ms; animation: none; opacity: 1; transform: none;">
+      <div class="distribution-card-head">
+        <span class="distribution-model skeleton">claude-sonnet-4-6</span>
+      </div>
+      <div class="distribution-metrics">
+        <div class="distribution-metric">
+          <span class="distribution-metric-label">调用次数</span>
+          <strong class="distribution-metric-value skeleton">128</strong>
+        </div>
+        <div class="distribution-metric">
+          <span class="distribution-metric-label">花费</span>
+          <strong class="distribution-metric-value distribution-metric-value--cost skeleton">$12.60</strong>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function setCreditValues({ balance, totalConsumed, totalRecharged }) {
   const balanceValue = numberOrNull(balance);
   const consumedValue = numberOrNull(totalConsumed);
@@ -173,6 +215,134 @@ function syncPagination() {
   els.nextPageBtn.disabled = isLoading || currentPage >= totalPages;
 }
 
+function setCopyStatus(text = "") {
+  if (copyStatusTimer) {
+    clearTimeout(copyStatusTimer);
+    copyStatusTimer = null;
+  }
+
+  els.copyLinkStatus.textContent = text;
+  if (!text) return;
+
+  copyStatusTimer = setTimeout(() => {
+    els.copyLinkStatus.textContent = "";
+    copyStatusTimer = null;
+  }, 1800);
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || "");
+  if (!value) return false;
+
+  if (window.api && typeof window.api.copyText === "function") {
+    const copied = await window.api.copyText(value);
+    return copied !== false;
+  }
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+
+  const helper = document.createElement("textarea");
+  helper.value = value;
+  helper.setAttribute("readonly", "");
+  helper.style.position = "fixed";
+  helper.style.opacity = "0";
+  helper.style.pointerEvents = "none";
+  helper.style.left = "-9999px";
+  document.body.appendChild(helper);
+  helper.select();
+  helper.setSelectionRange(0, helper.value.length);
+
+  try {
+    return document.execCommand("copy");
+  } finally {
+    document.body.removeChild(helper);
+  }
+}
+
+function resetCopyButton() {
+  els.copyLinkBtn.textContent = "复制链接";
+  els.copyLinkBtn.classList.remove("is-copied");
+  els.copyLinkBtn.classList.remove("is-copy-failed");
+}
+
+function renderDistribution(items) {
+  if (!Array.isArray(items) || !items.length) {
+    els.distributionBody.innerHTML = emptyStateMarkup(
+      "暂无模型分布",
+      "当前时间范围内还没有模型使用统计，稍后刷新可再次获取最新数据。"
+    );
+    return;
+  }
+
+  els.distributionBody.innerHTML = items.map((item, index) => `
+    <article class="distribution-card" style="--delay: ${index * 46}ms">
+      <div class="distribution-card-head">
+        <span class="distribution-model">${esc(item.model || "—")}</span>
+      </div>
+      <div class="distribution-metrics">
+        <div class="distribution-metric">
+          <span class="distribution-metric-label">调用次数</span>
+          <strong class="distribution-metric-value">${esc(fmtCount(item.requests ?? item.request_count ?? 0))}</strong>
+        </div>
+        <div class="distribution-metric">
+          <span class="distribution-metric-label">花费</span>
+          <strong class="distribution-metric-value distribution-metric-value--cost">${esc(fmtMoney(item.cost ?? item.total_cost))}</strong>
+        </div>
+      </div>
+    </article>
+  `).join("");
+}
+
+function closeLinkModal() {
+  activeResourceKey = "";
+  els.linkModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  resetCopyButton();
+  setCopyStatus("");
+}
+
+function openLinkModal(resourceKey) {
+  const resource = RESOURCE_LINKS[resourceKey];
+  if (!resource) return;
+
+  activeResourceKey = resourceKey;
+  els.linkModalTitle.textContent = resource.title;
+  els.linkModalUrl.textContent = resource.url;
+  resetCopyButton();
+  els.linkModal.hidden = false;
+  document.body.classList.add("modal-open");
+  setCopyStatus("");
+}
+
+async function copyActiveLink() {
+  const resource = RESOURCE_LINKS[activeResourceKey];
+  if (!resource) return;
+
+  try {
+    const copied = await copyTextToClipboard(resource.url);
+    if (!copied) throw new Error("Clipboard unavailable");
+
+    els.copyLinkBtn.textContent = "复制成功";
+    els.copyLinkBtn.classList.add("is-copied");
+    setCopyStatus("链接已复制到剪贴板");
+    announce(`${resource.title}已复制`);
+
+    setTimeout(() => {
+      if (!els.linkModal.hidden) {
+        resetCopyButton();
+      }
+    }, 1600);
+  } catch {
+    els.copyLinkBtn.textContent = "复制失败";
+    els.copyLinkBtn.classList.add("is-copy-failed");
+    setCopyStatus("复制失败，请手动选中链接");
+    announce(`${resource.title}复制失败`);
+  }
+}
+
 function renderIdleState() {
   setCreditValues({});
   totalItems = 0;
@@ -181,6 +351,10 @@ function renderIdleState() {
   currentPageSize = PAGE_LIMIT;
 
   if (!hasSnapshot) {
+    els.distributionBody.innerHTML = emptyStateMarkup(
+      "刷新后查看分布",
+      "同步成功后，这里会按模型展示调用次数和花费，方便你快速判断主要消耗来自哪里。"
+    );
     els.tableBody.innerHTML = emptyStateMarkup(
       "输入 API Key 后点击刷新",
       "这里只保留消费记录本身，刷新后会展示最近 10 条明细。"
@@ -196,6 +370,7 @@ function renderLoadingState() {
   els.balanceAmount.className = "balance-amount empty";
   els.totalConsumedAmount.textContent = "—";
   els.totalRechargedAmount.textContent = "—";
+  els.distributionBody.innerHTML = [0, 1, 2].map(distributionSkeletonMarkup).join("");
   els.tableBody.innerHTML = [0, 1, 2, 3].map(skeletonRowMarkup).join("");
   syncPagination();
 }
@@ -203,6 +378,7 @@ function renderLoadingState() {
 function renderData(data) {
   const balance = data?.balance || {};
   const consumption = data?.consumption || {};
+  const modelDistribution = Array.isArray(data?.stats?.model_distribution) ? data.stats.model_distribution : [];
   const items = Array.isArray(consumption.items) ? consumption.items : [];
   const resolvedLimit = normalizePage(consumption.limit, currentPageSize);
   const resolvedTotal = Math.max(0, numberOrNull(consumption.total) ?? items.length);
@@ -218,6 +394,7 @@ function renderData(data) {
   totalItems = resolvedTotal;
   totalPages = getTotalPages(resolvedTotal, resolvedLimit);
   currentPage = Math.min(resolvedPage, totalPages);
+  renderDistribution(modelDistribution);
 
   if (!items.length) {
     els.tableBody.innerHTML = emptyStateMarkup("暂无消费记录", "当前时间范围内没有消费明细，稍后刷新可再次获取最新数据。");
@@ -242,6 +419,7 @@ function renderData(data) {
 function renderErrorState(hint) {
   if (!hasSnapshot) {
     setCreditValues({});
+    els.distributionBody.innerHTML = emptyStateMarkup("暂时无法获取分布", hint);
     els.tableBody.innerHTML = emptyStateMarkup("暂时无法获取数据", hint);
   }
 
@@ -323,6 +501,17 @@ els.prevPageBtn.addEventListener("click", () => {
 els.nextPageBtn.addEventListener("click", () => {
   if (els.nextPageBtn.disabled) return;
   refresh(currentPage + 1);
+});
+els.viewOfficialBtn.addEventListener("click", () => openLinkModal("official"));
+els.viewGuideBtn.addEventListener("click", () => openLinkModal("guide"));
+els.linkModalBackdrop.addEventListener("click", closeLinkModal);
+els.linkModalCloseBtn.addEventListener("click", closeLinkModal);
+els.copyLinkBtn.addEventListener("click", copyActiveLink);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.linkModal.hidden) {
+    closeLinkModal();
+  }
 });
 
 document.querySelectorAll(".interactive-panel").forEach(attachPointerGlow);

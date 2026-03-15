@@ -40,6 +40,11 @@
               <strong id="totalRechargedAmount" class="credit-stat-value">—</strong>
             </div>
           </div>
+
+          <div class="credit-actions" aria-label="相关链接">
+            <button id="viewOfficialBtn" class="credit-link-btn" type="button">查看官网</button>
+            <button id="viewGuideBtn" class="credit-link-btn credit-link-btn--secondary" type="button">查看用法</button>
+          </div>
         </div>
       </article>
 
@@ -64,6 +69,22 @@
           <div id="msg" class="msg" role="status" aria-live="polite"></div>
         </div>
       </aside>
+    </section>
+
+    <section class="panel distribution-panel reveal" aria-labelledby="distributionTitle">
+      <div class="panel-heading panel-heading--minimal">
+        <span class="panel-chip">Models</span>
+        <h2 id="distributionTitle" class="panel-title panel-title--compact">模型使用分布</h2>
+        <p class="distribution-copy">展示当前时间范围内各模型的调用次数与花费。</p>
+      </div>
+
+      <div id="distributionBody" class="distribution-grid">
+        <div class="empty-state">
+          <div class="empty-orb" aria-hidden="true"></div>
+          <p class="empty-title">刷新后查看分布</p>
+          <p class="empty-text">同步成功后，这里会按模型展示调用次数和花费，方便你快速判断主要消耗来自哪里。</p>
+        </div>
+      </div>
     </section>
 
     <section class="panel table-panel reveal" aria-labelledby="tableTitle">
@@ -98,6 +119,21 @@
 
     <div id="srAnnounce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
   </main>
+
+  <div id="linkModal" class="link-modal" hidden>
+    <div id="linkModalBackdrop" class="link-modal-backdrop"></div>
+    <section class="link-modal-panel" role="dialog" aria-modal="true" aria-labelledby="linkModalTitle">
+      <button id="linkModalCloseBtn" class="link-modal-close" type="button" aria-label="关闭链接弹窗">关闭</button>
+      <span class="panel-chip">Quick Link</span>
+      <h2 id="linkModalTitle" class="link-modal-title">链接地址</h2>
+      <p class="link-modal-copy">复制下方地址后，可在浏览器中直接打开。</p>
+      <div id="linkModalUrl" class="link-modal-url"></div>
+      <div class="link-modal-actions">
+        <button id="copyLinkBtn" class="link-modal-copy-btn" type="button">复制链接</button>
+        <span id="copyLinkStatus" class="link-modal-status" aria-live="polite"></span>
+      </div>
+    </section>
+  </div>
 
   <script type="module" src="./renderer.js"></script>
 </body>

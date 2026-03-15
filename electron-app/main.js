@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, net } = require("electron");
+const { app, BrowserWindow, ipcMain, net, clipboard } = require("electron");
 const path = require("path");
 
 let win;
@@ -231,4 +231,9 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("fetch-dashboard", (_event, { authorization, page, limit } = {}) => {
   return fetchDashboardWithRetry(authorization, { page, limit });
+});
+
+ipcMain.handle("copy-text", (_event, { text } = {}) => {
+  clipboard.writeText(String(text || ""));
+  return true;
 });
