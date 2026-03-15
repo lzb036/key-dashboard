@@ -266,7 +266,9 @@ function setActiveSource(sourceKey, { persist = true } = {}) {
     view.classList.toggle("is-active", isActive);
   });
 
-  els.sourceSwitchText.textContent = SOURCE_CONFIG[source].text;
+  if (els.sourceSwitchText) {
+    els.sourceSwitchText.textContent = SOURCE_CONFIG[source].text;
+  }
 
   if (persist) {
     localStorage.setItem(SOURCE_STORAGE_KEY, source);
