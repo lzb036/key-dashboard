@@ -671,6 +671,7 @@ button {
 }
 
 .station-two-control {
+  align-content: start;
   background:
     radial-gradient(circle at 100% 0%, rgba(255, 182, 85, 0.14), transparent 34%),
     linear-gradient(180deg, rgba(11, 20, 34, 0.94) 0%, rgba(9, 16, 27, 0.98) 100%);

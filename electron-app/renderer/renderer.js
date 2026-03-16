@@ -156,7 +156,7 @@ function setStationTwoButtonLoading(loading) {
   els.stationTwoLoginBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "login");
   els.stationTwoRefreshBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "dashboard");
   els.stationTwoLoginLabel.textContent = stationTwoLoading && stationTwoView === "login" ? "登录中..." : "登录";
-  els.stationTwoRefreshLabel.textContent = stationTwoLoading && stationTwoView === "dashboard" ? "刷新中..." : "刷新 YesCode";
+  els.stationTwoRefreshLabel.textContent = stationTwoLoading && stationTwoView === "dashboard" ? "刷新中..." : "刷新数据";
 }
 
 function getStationTwoPreferencePayload({ passwordOverride } = {}) {
@@ -390,14 +390,14 @@ function renderLoadingState() {
 function renderData(data) {
   const balance = data?.balance || {};
   const consumption = data?.consumption || {};
-  const modelDistribution = Array.isArray(data?.stats?.model_distribution) ? data.stats.model_distribution : [];
   const items = Array.isArray(consumption.items) ? consumption.items : [];
+  const modelDistribution = Array.isArray(data?.stats?.model_distribution) ? data.stats.model_distribution : [];
   const resolvedLimit = normalizePage(consumption.limit, currentPageSize);
   const resolvedTotal = Math.max(0, numberOrNull(consumption.total) ?? items.length);
   const resolvedPage = normalizePage(consumption.page, currentPage);
   setCreditValues({
     balance: balance.balance,
-    totalConsumed: balance.total_consumed,
+    totalConsumed: data?.stats?.total_cost,
     totalRecharged: balance.total_recharged
   });
   currentPageSize = resolvedLimit;
