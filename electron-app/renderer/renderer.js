@@ -4,6 +4,7 @@ const STATION_TWO_EMAIL_KEY = "station_two_email";
 const STATION_TWO_PROXY_KEY = "station_two_proxy";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
 const PAGE_LIMIT = 10;
+const STATION_TWO_USAGE_PAGE_SIZE = 10;
 const SOURCE_CONFIG = {
   cto: { title: "hxrra" },
   nova: { title: "YesCode" },
@@ -41,6 +42,13 @@ const els = {
   stationTwoRemainingAmount: document.getElementById("stationTwoRemainingAmount"),
   stationTwoMonthlyLimitAmount: document.getElementById("stationTwoMonthlyLimitAmount"),
   stationTwoDailyUsageAmount: document.getElementById("stationTwoDailyUsageAmount"),
+  stationTwoDistributionBody: document.getElementById("stationTwoDistributionBody"),
+  stationTwoUsageFilter: document.getElementById("stationTwoUsageFilter"),
+  stationTwoUsageTableBody: document.getElementById("stationTwoUsageTableBody"),
+  stationTwoUsagePagination: document.getElementById("stationTwoUsagePagination"),
+  stationTwoUsagePaginationMeta: document.getElementById("stationTwoUsagePaginationMeta"),
+  stationTwoUsagePrevBtn: document.getElementById("stationTwoUsagePrevBtn"),
+  stationTwoUsageNextBtn: document.getElementById("stationTwoUsageNextBtn"),
   stationTwoEmailInput: document.getElementById("stationTwoEmailInput"),
   stationTwoPasswordInput: document.getElementById("stationTwoPasswordInput"),
   stationTwoAdvancedSettings: document.getElementById("stationTwoAdvancedSettings"),
@@ -78,9 +86,17 @@ let copyStatusTimer = null;
 let currentSource = "cto";
 let stationTwoHasSnapshot = false;
 let stationTwoLoading = false;
+let stationTwoUsageLoading = false;
 let stationTwoSession = null;
 let stationTwoView = "login";
 let stationTwoAutoLoginAttempted = false;
+let stationTwoUsageRecords = [];
+let stationTwoUsageApiKeys = [];
+let stationTwoSelectedApiKeyId = "";
+let stationTwoUsagePage = 1;
+let stationTwoUsageTotalItems = 0;
+let stationTwoUsagePageSize = STATION_TWO_USAGE_PAGE_SIZE;
+let stationTwoUsageTotalPages = 1;
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -190,6 +206,32 @@ function skeletonRowMarkup(index) {
 
 function distributionSkeletonMarkup(index) {
   return `<article class="distribution-card" style="--delay:${index * 36}ms;animation:none;opacity:1;transform:none;"><div class="distribution-card-head"><span class="distribution-model skeleton">claude-sonnet-4-6</span></div><div class="distribution-metrics"><div class="distribution-metric"><span class="distribution-metric-label">调用次数</span><strong class="distribution-metric-value skeleton">128</strong></div><div class="distribution-metric"><span class="distribution-metric-label">花费</span><strong class="distribution-metric-value distribution-metric-value--cost skeleton">$12.60</strong></div></div></article>`;
+}
+
+function stationTwoUsageSkeletonRowMarkup(index) {
+  return `<div class="table-grid table-grid--yescode table-row table-row--yescode" role="row" style="--delay:${index * 40}ms;animation:none;opacity:1;transform:none;"><div class="row-time skeleton" role="cell">03-16 22:25:31</div><div class="row-key skeleton" role="cell">codex</div><div role="cell"><span class="row-model skeleton">gpt-5.4-xhigh</span></div><div class="row-cost skeleton" role="cell">$0.04</div></div>`;
+}
+
+function renderDistributionInto(node, items, { emptyTitle, emptyText } = {}) {
+  if (!node) return;
+  if (!Array.isArray(items) || !items.length) {
+    node.innerHTML = emptyStateMarkup(emptyTitle, emptyText);
+    return;
+  }
+  node.innerHTML = items.map((item, index) => `
+    <article class="distribution-card" style="--delay:${index * 46}ms">
+      <div class="distribution-card-head"><span class="distribution-model">${esc(item.model || "—")}</span></div>
+      <div class="distribution-metrics">
+        <div class="distribution-metric"><span class="distribution-metric-label">调用次数</span><strong class="distribution-metric-value">${esc(fmtCount(item.requests ?? item.request_count ?? 0))}</strong></div>
+        <div class="distribution-metric"><span class="distribution-metric-label">花费</span><strong class="distribution-metric-value distribution-metric-value--cost">${esc(fmtMoney(item.cost ?? item.total_cost))}</strong></div>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderDistributionLoadingInto(node) {
+  if (!node) return;
+  node.innerHTML = [0, 1, 2].map(distributionSkeletonMarkup).join("");
 }
 
 function setCreditValues({ balance, totalConsumed, totalRecharged }) {
@@ -348,19 +390,109 @@ function getRequestFailureHint(message) {
 }
 
 function renderDistribution(items) {
-  if (!Array.isArray(items) || !items.length) {
-    els.distributionBody.innerHTML = emptyStateMarkup("暂无模型分布", "当前时间范围内还没有模型使用统计，稍后刷新可再次获取最新数据。");
+  renderDistributionInto(els.distributionBody, items, {
+    emptyTitle: "暂无模型分布",
+    emptyText: "当前时间范围内还没有模型使用统计，稍后刷新可再次获取最新数据。"
+  });
+}
+
+function renderStationTwoDistribution(items) {
+  renderDistributionInto(els.stationTwoDistributionBody, items, {
+    emptyTitle: "暂无模型分布",
+    emptyText: "同步成功后，这里会展示 YesCode 当日各模型的调用次数和花费。"
+  });
+}
+
+function renderStationTwoUsageFilter(options) {
+  if (!els.stationTwoUsageFilter) return;
+
+  const resolvedOptions = Array.isArray(options) ? options : [];
+  const hasSelected = resolvedOptions.some((option) => String(option.id || "") === stationTwoSelectedApiKeyId);
+  if (!hasSelected) {
+    stationTwoSelectedApiKeyId = "";
+  }
+
+  els.stationTwoUsageFilter.innerHTML = [
+    '<option value="">全部密钥</option>',
+    ...resolvedOptions.map((option) => `<option value="${esc(String(option.id || ""))}">${esc(option.name || "未命名密钥")}</option>`)
+  ].join("");
+  els.stationTwoUsageFilter.value = stationTwoSelectedApiKeyId;
+  els.stationTwoUsageFilter.disabled = stationTwoUsageLoading || resolvedOptions.length === 0;
+}
+
+function getStationTwoUsageModelLabel(item) {
+  const model = String(item?.model || "").trim() || "—";
+  const reasoningEffort = String(item?.reasoningEffort || "").trim();
+  if (!reasoningEffort || reasoningEffort === "—") return model;
+  return `${model}-${reasoningEffort}`;
+}
+
+function syncStationTwoUsagePagination(totalItems, { forceShow = false } = {}) {
+  if (!els.stationTwoUsagePagination || !els.stationTwoUsagePaginationMeta || !els.stationTwoUsagePrevBtn || !els.stationTwoUsageNextBtn) {
     return;
   }
-  els.distributionBody.innerHTML = items.map((item, index) => `
-    <article class="distribution-card" style="--delay:${index * 46}ms">
-      <div class="distribution-card-head"><span class="distribution-model">${esc(item.model || "—")}</span></div>
-      <div class="distribution-metrics">
-        <div class="distribution-metric"><span class="distribution-metric-label">调用次数</span><strong class="distribution-metric-value">${esc(fmtCount(item.requests ?? item.request_count ?? 0))}</strong></div>
-        <div class="distribution-metric"><span class="distribution-metric-label">花费</span><strong class="distribution-metric-value distribution-metric-value--cost">${esc(fmtMoney(item.cost ?? item.total_cost))}</strong></div>
-      </div>
-    </article>
+
+  const total = Math.max(0, numberOrNull(totalItems) ?? 0);
+  const resolvedPageSize = Math.max(1, numberOrNull(stationTwoUsagePageSize) ?? STATION_TWO_USAGE_PAGE_SIZE);
+  stationTwoUsageTotalItems = total;
+  stationTwoUsageTotalPages = getTotalPages(total, resolvedPageSize);
+  const shouldShow = forceShow || total > 0;
+  els.stationTwoUsagePagination.hidden = !shouldShow;
+
+  if (!shouldShow) {
+    els.stationTwoUsagePaginationMeta.textContent = "";
+    els.stationTwoUsagePrevBtn.disabled = true;
+    els.stationTwoUsageNextBtn.disabled = true;
+    return;
+  }
+
+  stationTwoUsagePage = Math.min(Math.max(1, stationTwoUsagePage), stationTwoUsageTotalPages);
+  els.stationTwoUsagePaginationMeta.textContent = stationTwoUsageLoading
+    ? `正在加载第 ${stationTwoUsagePage} 页...`
+    : `第 ${fmtCount(stationTwoUsagePage)} / ${fmtCount(stationTwoUsageTotalPages)} 页 · 共 ${fmtCount(total)} 条`;
+  els.stationTwoUsagePrevBtn.disabled = stationTwoUsageLoading || stationTwoUsagePage <= 1;
+  els.stationTwoUsageNextBtn.disabled = stationTwoUsageLoading || stationTwoUsagePage >= stationTwoUsageTotalPages;
+}
+
+function renderStationTwoUsageTable() {
+  if (!els.stationTwoUsageTableBody) return;
+
+  const records = Array.isArray(stationTwoUsageRecords) ? stationTwoUsageRecords : [];
+
+  if (!stationTwoUsageTotalItems) {
+    const title = stationTwoSelectedApiKeyId ? "该密钥今日暂无消费" : "暂无消费记录";
+    const text = stationTwoSelectedApiKeyId
+      ? "切换到其他 API Key，或选择“全部密钥”查看当天消费记录。"
+      : "今天还没有可展示的 YesCode 消费记录。";
+    els.stationTwoUsageTableBody.innerHTML = emptyStateMarkup(title, text);
+    syncStationTwoUsagePagination(0);
+    return;
+  }
+
+  if (!records.length) {
+    els.stationTwoUsageTableBody.innerHTML = emptyStateMarkup("当前页暂无记录", "这页暂时没有可展示的数据，返回上一页或刷新后再试。");
+    syncStationTwoUsagePagination(stationTwoUsageTotalItems, { forceShow: true });
+    return;
+  }
+
+  els.stationTwoUsageTableBody.innerHTML = records.map((item, index) => `
+    <div class="table-grid table-grid--yescode table-row table-row--yescode" role="row" style="--delay:${index * 42}ms">
+      <div class="row-time" role="cell">${esc(fmtDate(item.createdAt))}</div>
+      <div class="row-key" role="cell">${esc(item.apiKeyName || "未命名密钥")}</div>
+      <div role="cell"><span class="row-model">${esc(getStationTwoUsageModelLabel(item))}</span></div>
+      <div class="row-cost" role="cell">${esc(fmtMoney(item.totalCost))}</div>
+    </div>
   `).join("");
+  syncStationTwoUsagePagination(stationTwoUsageTotalItems, { forceShow: true });
+}
+
+function renderStationTwoUsageLoadingState({ keepPagination = false } = {}) {
+  if (!els.stationTwoUsageTableBody) return;
+  if (els.stationTwoUsageFilter) {
+    els.stationTwoUsageFilter.disabled = true;
+  }
+  els.stationTwoUsageTableBody.innerHTML = [0, 1, 2, 3].map(stationTwoUsageSkeletonRowMarkup).join("");
+  syncStationTwoUsagePagination(stationTwoUsageTotalItems, { forceShow: keepPagination || stationTwoUsageTotalItems > 0 });
 }
 
 function renderIdleState() {
@@ -382,7 +514,7 @@ function renderLoadingState() {
   els.balanceAmount.className = "balance-amount empty";
   els.totalConsumedAmount.textContent = "—";
   els.totalRechargedAmount.textContent = "—";
-  els.distributionBody.innerHTML = [0, 1, 2].map(distributionSkeletonMarkup).join("");
+  renderDistributionLoadingInto(els.distributionBody);
   els.tableBody.innerHTML = [0, 1, 2, 3].map(skeletonRowMarkup).join("");
   syncPagination();
 }
@@ -518,8 +650,18 @@ function setStationTwoSummaryValues({ title, remainingUsd, monthlyLimitUsd, dail
 }
 
 function renderStationTwoIdleState() {
+  stationTwoUsageLoading = false;
   if (!stationTwoHasSnapshot) {
     setStationTwoSummaryValues({ title: "等待登录", remainingUsd: null, monthlyLimitUsd: null, dailyUsageUsd: null });
+    stationTwoUsageRecords = [];
+    stationTwoUsageApiKeys = [];
+    stationTwoSelectedApiKeyId = "";
+    stationTwoUsagePage = 1;
+    stationTwoUsageTotalItems = 0;
+    stationTwoUsagePageSize = STATION_TWO_USAGE_PAGE_SIZE;
+    renderStationTwoDistribution([]);
+    renderStationTwoUsageFilter([]);
+    renderStationTwoUsageTable();
     setStationTwoView("login");
   } else {
     setStationTwoView("dashboard");
@@ -532,14 +674,35 @@ function renderStationTwoIdleState() {
 }
 
 function renderStationTwoLoadingState() {
+  stationTwoUsageLoading = true;
   els.stationTwoPackageName.textContent = "同步中";
   els.stationTwoRemainingAmount.textContent = "同步中...";
   els.stationTwoRemainingAmount.className = "balance-amount empty";
   els.stationTwoMonthlyLimitAmount.textContent = "—";
   els.stationTwoDailyUsageAmount.textContent = "—";
+  renderDistributionLoadingInto(els.stationTwoDistributionBody);
+  renderStationTwoUsageLoadingState({ keepPagination: stationTwoHasSnapshot });
   syncStationTwoSessionChrome({
     email: els.stationTwoEmailInput.value.trim() || stationTwoSession?.email || ""
   });
+}
+
+function renderStationTwoUsageData(data) {
+  const usagePagination = data?.usagePagination || {};
+  stationTwoSession = data?.session || stationTwoSession;
+  stationTwoUsageLoading = false;
+  stationTwoUsageRecords = Array.isArray(data?.usageRecords) ? data.usageRecords : [];
+  stationTwoUsageApiKeys = Array.isArray(data?.usageApiKeys) ? data.usageApiKeys : stationTwoUsageApiKeys;
+  stationTwoUsagePageSize = Math.max(1, numberOrNull(usagePagination.pageSize) ?? STATION_TWO_USAGE_PAGE_SIZE);
+  stationTwoUsageTotalItems = Math.max(0, numberOrNull(usagePagination.total) ?? stationTwoUsageRecords.length);
+  stationTwoUsageTotalPages = getTotalPages(stationTwoUsageTotalItems, stationTwoUsagePageSize);
+  stationTwoUsagePage = Math.min(
+    normalizePage(usagePagination.page, stationTwoUsagePage),
+    stationTwoUsageTotalPages
+  );
+  renderStationTwoUsageFilter(stationTwoUsageApiKeys);
+  renderStationTwoUsageTable();
+  syncStationTwoSessionChrome(stationTwoSession);
 }
 
 function renderStationTwoData(data) {
@@ -552,13 +715,27 @@ function renderStationTwoData(data) {
     monthlyLimitUsd: summary.monthlyLimitUsd,
     dailyUsageUsd: summary.dailyUsageUsd
   });
-  syncStationTwoSessionChrome(stationTwoSession);
+  renderStationTwoUsageData(data);
+  renderStationTwoDistribution(data?.modelDistribution);
   setStationTwoView("dashboard");
 }
 
 function renderStationTwoError(message) {
+  stationTwoUsageLoading = false;
   if (!stationTwoHasSnapshot) {
     setStationTwoSummaryValues({ title: "暂时无法同步", remainingUsd: null, monthlyLimitUsd: null, dailyUsageUsd: null });
+    stationTwoUsageRecords = [];
+    stationTwoUsageApiKeys = [];
+    stationTwoSelectedApiKeyId = "";
+    stationTwoUsagePage = 1;
+    stationTwoUsageTotalItems = 0;
+    stationTwoUsagePageSize = STATION_TWO_USAGE_PAGE_SIZE;
+    renderStationTwoDistribution([]);
+    renderStationTwoUsageFilter([]);
+    renderStationTwoUsageTable();
+  } else {
+    renderStationTwoUsageFilter(stationTwoUsageApiKeys);
+    renderStationTwoUsageTable();
   }
   setStationTwoMessage(message, "error");
 }
@@ -584,7 +761,10 @@ async function loginStationTwo() {
   try {
     const data = await window.api.fetchStationTwoDashboard({
       ...payload,
-      allowLogin: true
+      allowLogin: true,
+      usagePage: 1,
+      usagePageSize: stationTwoUsagePageSize,
+      usageApiKeyId: stationTwoSelectedApiKeyId
     });
     const emailToStore = String(data?.session?.email || payload.email || "").trim();
     if (emailToStore) {
@@ -613,7 +793,10 @@ async function refreshStationTwoDashboard() {
     const data = await window.api.fetchStationTwoDashboard({
       email: els.stationTwoEmailInput.value.trim(),
       proxyUrl: els.stationTwoProxyInput.value.trim(),
-      allowLogin: false
+      allowLogin: false,
+      usagePage: stationTwoUsagePage,
+      usagePageSize: stationTwoUsagePageSize,
+      usageApiKeyId: stationTwoSelectedApiKeyId
     });
     renderStationTwoData(data);
     setStationTwoMessage("YesCode 数据已更新", "success");
@@ -630,6 +813,50 @@ async function refreshStationTwoDashboard() {
     renderStationTwoError(message);
   } finally {
     setStationTwoButtonLoading(false);
+  }
+}
+
+async function refreshStationTwoUsagePage(targetPage = stationTwoUsagePage) {
+  if (!window.api || typeof window.api.fetchStationTwoUsage !== "function") {
+    return;
+  }
+
+  stationTwoUsagePage = Math.max(1, normalizePage(targetPage, stationTwoUsagePage));
+  stationTwoUsageLoading = true;
+  setStationTwoMessage("");
+  renderStationTwoUsageFilter(stationTwoUsageApiKeys);
+  renderStationTwoUsageLoadingState({ keepPagination: stationTwoHasSnapshot });
+
+  try {
+    const data = await window.api.fetchStationTwoUsage({
+      email: els.stationTwoEmailInput.value.trim(),
+      proxyUrl: els.stationTwoProxyInput.value.trim(),
+      allowLogin: false,
+      page: stationTwoUsagePage,
+      pageSize: stationTwoUsagePageSize,
+      apiKeyId: stationTwoSelectedApiKeyId
+    });
+    renderStationTwoUsageData(data);
+    setStationTwoMessage(
+      stationTwoUsageTotalPages > 1
+        ? `消费记录已更新，当前第 ${fmtCount(stationTwoUsagePage)} 页`
+        : "消费记录已更新",
+      "success"
+    );
+  } catch (error) {
+    stationTwoUsageLoading = false;
+    const message = error?.message || "YesCode 消费记录同步失败，请稍后重试";
+    if (isStationTwoAuthRequired(message)) {
+      stationTwoHasSnapshot = false;
+      stationTwoSession = null;
+      els.stationTwoPasswordInput.value = "";
+      setStationTwoView("login");
+      setStationTwoMessage("登录已过期，请重新登录", "error");
+      return;
+    }
+    renderStationTwoUsageFilter(stationTwoUsageApiKeys);
+    renderStationTwoUsageTable();
+    setStationTwoMessage(message, "error");
   }
 }
 
@@ -734,6 +961,22 @@ els.stationTwoAutoLoginToggle.addEventListener("change", async () => {
   }
   syncStationTwoPreferenceState();
   await persistStationTwoPreferences();
+});
+
+els.stationTwoUsageFilter?.addEventListener("change", (event) => {
+  stationTwoSelectedApiKeyId = String(event.target.value || "");
+  stationTwoUsagePage = 1;
+  void refreshStationTwoUsagePage(1);
+});
+
+els.stationTwoUsagePrevBtn?.addEventListener("click", () => {
+  if (els.stationTwoUsagePrevBtn.disabled) return;
+  void refreshStationTwoUsagePage(stationTwoUsagePage - 1);
+});
+
+els.stationTwoUsageNextBtn?.addEventListener("click", () => {
+  if (els.stationTwoUsageNextBtn.disabled) return;
+  void refreshStationTwoUsagePage(stationTwoUsagePage + 1);
 });
 
 els.refreshBtn.addEventListener("click", refresh);

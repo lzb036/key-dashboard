@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("fetch-dashboard", { authorization, ...options }),
   fetchStationTwoDashboard: (options = {}) =>
     ipcRenderer.invoke("fetch-station-two-dashboard", options),
+  fetchStationTwoUsage: (options = {}) =>
+    ipcRenderer.invoke("fetch-station-two-usage", options),
   getStationTwoPreferences: () =>
     ipcRenderer.invoke("get-station-two-preferences"),
   saveStationTwoPreferences: (options = {}) =>
