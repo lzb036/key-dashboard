@@ -19,5 +19,7 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("save-station-three-preferences", options),
   clearStationTwoSession: () =>
     ipcRenderer.invoke("clear-station-two-session"),
+  clearStationThreeSession: () =>
+    ipcRenderer.invoke("clear-station-three-session"),
   copyText: (text) => ipcRenderer.invoke("copy-text", { text })
 });

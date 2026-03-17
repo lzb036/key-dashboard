@@ -58,6 +58,7 @@ const stationThreeState = {
   username: "",
   password: "",
   userId: "",
+  sessionCookie: "",
   displayName: "",
   group: "",
   quotaPerUnit: STATION_THREE_DEFAULT_QUOTA_PER_UNIT
@@ -421,6 +422,30 @@ function getStationThreeSessionPartition() {
   return session.fromPartition(STATION_THREE_SESSION_PARTITION, { cache: true });
 }
 
+async function clearStationThreeSessionStorage() {
+  const targetSession = getStationThreeSessionPartition();
+
+  try {
+    await targetSession.clearStorageData({
+      storages: ["cookies"]
+    });
+  } catch {
+    // Ignore cookie cleanup failures and continue with credential reset.
+  }
+
+  try {
+    await targetSession.clearAuthCache();
+  } catch {
+    // Ignore auth cache cleanup failures.
+  }
+
+  try {
+    await targetSession.closeAllConnections();
+  } catch {
+    // Ignore stale pooled connections after clearing cookies.
+  }
+}
+
 async function ensureStationTwoProxy(proxyUrl) {
   const normalizedProxy = normalizeStationTwoProxy(proxyUrl);
   const targetSession = getStationTwoSessionPartition();
@@ -491,7 +516,15 @@ function buildStationThreeAuthRequiredError(message = "998Code 登录已失效�
   return error;
 }
 
-function setStationThreeCredentials({ username, password, userId, displayName, group, quotaPerUnit } = {}) {
+function setStationThreeCredentials({
+  username,
+  password,
+  userId,
+  sessionCookie,
+  displayName,
+  group,
+  quotaPerUnit
+} = {}) {
   if (typeof username === "string" && username.trim()) {
     stationThreeState.username = username.trim();
   }
@@ -502,6 +535,10 @@ function setStationThreeCredentials({ username, password, userId, displayName, g
 
   if (typeof userId === "string" || typeof userId === "number") {
     stationThreeState.userId = String(userId || "").trim();
+  }
+
+  if (typeof sessionCookie === "string") {
+    stationThreeState.sessionCookie = sessionCookie.trim();
   }
 
   if (typeof displayName === "string" && displayName.trim()) {
@@ -520,6 +557,7 @@ function setStationThreeCredentials({ username, password, userId, displayName, g
 
 function clearStationThreeSession({ clearCredentials = false } = {}) {
   stationThreeState.userId = "";
+  stationThreeState.sessionCookie = "";
   stationThreeState.displayName = "";
   stationThreeState.group = "";
   stationThreeState.quotaPerUnit = STATION_THREE_DEFAULT_QUOTA_PER_UNIT;
@@ -969,6 +1007,10 @@ function requestStationThree(url, { method = "GET", headers = {}, body = "" } = 
       request.setHeader("Accept-Encoding", "identity");
       request.setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Electron");
 
+      if (!headers.Cookie && !headers.cookie && stationThreeState.sessionCookie) {
+        request.setHeader("Cookie", stationThreeState.sessionCookie);
+      }
+
       Object.entries(headers).forEach(([key, value]) => {
         if (value === undefined || value === null || value === "") return;
         request.setHeader(key, value);
@@ -980,10 +1022,25 @@ function requestStationThree(url, { method = "GET", headers = {}, body = "" } = 
         });
 
         response.on("end", () => {
+          const setCookieHeader = response?.headers?.["set-cookie"];
+          const setCookieItems = Array.isArray(setCookieHeader)
+            ? setCookieHeader
+            : setCookieHeader
+              ? [setCookieHeader]
+              : [];
+          const sessionCookie = setCookieItems
+            .map((item) => String(item || "").split(";")[0].trim())
+            .find((item) => /^session=/i.test(item));
+
+          if (sessionCookie) {
+            stationThreeState.sessionCookie = sessionCookie;
+          }
+
           if (response.statusCode >= 200 && response.statusCode < 300) {
             finishResolve({
               statusCode: response.statusCode,
-              bodyText: responseData
+              bodyText: responseData,
+              headers: response.headers
             });
             return;
           }
@@ -1731,7 +1788,7 @@ async function loginStationThree({ username, password } = {}) {
     password: resolvedPassword
   });
 
-  const { bodyText } = await requestStationThree(STATION_THREE_LOGIN_URL, {
+  const { bodyText, headers } = await requestStationThree(STATION_THREE_LOGIN_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1741,11 +1798,21 @@ async function loginStationThree({ username, password } = {}) {
     body: requestBody
   });
   const payload = unwrapStationThreePayload(bodyText);
+  const setCookieHeader = headers?.["set-cookie"];
+  const setCookieItems = Array.isArray(setCookieHeader)
+    ? setCookieHeader
+    : setCookieHeader
+      ? [setCookieHeader]
+      : [];
+  const sessionCookie = setCookieItems
+    .map((item) => String(item || "").split(";")[0].trim())
+    .find((item) => /^session=/i.test(item));
 
   setStationThreeCredentials({
     username: resolvedUsername,
     password: resolvedPassword,
     userId: payload?.id,
+    sessionCookie: sessionCookie || stationThreeState.sessionCookie,
     displayName: payload?.display_name,
     group: payload?.group
   });
@@ -1765,10 +1832,15 @@ function buildStationThreeUserHeaders(userId) {
   };
 }
 
-async function ensureStationThreeSession({ username, password, allowLogin = false } = {}) {
+async function ensureStationThreeSession({
+  username,
+  password,
+  allowLogin = false,
+  forceLogin = false
+} = {}) {
   setStationThreeCredentials({ username, password });
 
-  if (stationThreeState.userId) {
+  if (!forceLogin && stationThreeState.userId) {
     return stationThreeState.userId;
   }
 
@@ -1832,7 +1904,12 @@ function buildStationThreeSessionSnapshot(summary) {
   };
 }
 
-async function fetchStationThreeDashboard({ username, password, allowLogin = false } = {}) {
+async function fetchStationThreeDashboard({
+  username,
+  password,
+  allowLogin = false,
+  forceLogin = false
+} = {}) {
   setStationThreeCredentials({ username, password });
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -1840,7 +1917,8 @@ async function fetchStationThreeDashboard({ username, password, allowLogin = fal
       const userId = await ensureStationThreeSession({
         username: stationThreeState.username,
         password: stationThreeState.password,
-        allowLogin
+        allowLogin,
+        forceLogin
       });
       const [user, subscriptionSelf, statusResult, plansResult] = await Promise.all([
         fetchStationThreeSelf(userId),
@@ -1872,6 +1950,7 @@ async function fetchStationThreeDashboard({ username, password, allowLogin = fal
       const statusCode = Number(error && error.statusCode ? error.statusCode : 0);
       if ((statusCode === 401 || statusCode === 403) && attempt === 1) {
         clearStationThreeSession();
+        await clearStationThreeSessionStorage();
         if (allowLogin) {
           continue;
         }
@@ -1972,6 +2051,12 @@ ipcMain.handle("save-station-three-preferences", (_event, payload = {}) => {
 
 ipcMain.handle("clear-station-two-session", () => {
   clearStationTwoSession();
+  return true;
+});
+
+ipcMain.handle("clear-station-three-session", async () => {
+  clearStationThreeSession();
+  await clearStationThreeSessionStorage();
   return true;
 });
 

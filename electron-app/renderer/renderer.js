@@ -1105,7 +1105,8 @@ async function loginAtlas() {
   try {
     const data = await window.api.fetchStationThreeDashboard({
       ...payload,
-      allowLogin: true
+      allowLogin: true,
+      forceLogin: true
     });
     if (payload.username) {
       localStorage.setItem(ATLAS_USERNAME_KEY, payload.username);
@@ -1151,7 +1152,10 @@ async function refreshAtlasDashboard() {
   }
 }
 
-function reloginAtlas() {
+async function reloginAtlas() {
+  if (window.api && typeof window.api.clearStationThreeSession === "function") {
+    await window.api.clearStationThreeSession();
+  }
   atlasHasSnapshot = false;
   atlasSession = null;
   atlasAutoLoginAttempted = true;
