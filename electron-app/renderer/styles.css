@@ -1063,6 +1063,13 @@ button {
   margin-top: 18px;
 }
 
+.atlas-subscription-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
 .distribution-card {
   position: relative;
   overflow: hidden;
@@ -1096,6 +1103,117 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.atlas-subscription-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 16px;
+  min-height: 188px;
+  padding: 18px 18px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(153, 177, 214, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 46%),
+    rgba(12, 21, 35, 0.78);
+  box-shadow: var(--shadow-soft);
+  opacity: 0;
+  transform: translateY(12px);
+  animation: row-enter 440ms var(--ease-out) forwards;
+  animation-delay: var(--delay, 0ms);
+}
+
+.atlas-subscription-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 18px 0;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 182, 85, 0.18), rgba(121, 169, 255, 0.88));
+}
+
+.atlas-subscription-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.atlas-subscription-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.atlas-subscription-title {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.atlas-subscription-subtitle {
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.atlas-subscription-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(86, 214, 146, 0.18);
+  background: rgba(86, 214, 146, 0.1);
+  color: #9af3bd;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.atlas-subscription-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.atlas-subscription-metric {
+  display: grid;
+  gap: 6px;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(153, 177, 214, 0.1);
+  background: rgba(8, 16, 28, 0.42);
+}
+
+.atlas-subscription-label {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.atlas-subscription-value {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.atlas-subscription-value--accent {
+  color: #ffd082;
+}
+
+.atlas-subscription-meta {
+  display: grid;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .distribution-model {
@@ -2640,6 +2758,10 @@ body.ready .reveal {
     grid-template-columns: 1fr;
   }
 
+  .atlas-subscription-grid {
+    grid-template-columns: 1fr;
+  }
+
   .station-two-card-grid {
     grid-template-columns: 1fr;
   }
@@ -2752,6 +2874,10 @@ body.ready .reveal {
 
   .table-row > div {
     text-align: left !important;
+  }
+
+  .atlas-subscription-metrics {
+    grid-template-columns: 1fr;
   }
 
   .table-pagination {

@@ -12,11 +12,20 @@ const STATION_TWO_ACTIVE_URL = `${STATION_TWO_BASE_URL}/api/v1/subscriptions/act
 const STATION_TWO_MODELS_URL = `${STATION_TWO_BASE_URL}/api/v1/usage/dashboard/models`;
 const STATION_TWO_USAGE_URL = `${STATION_TWO_BASE_URL}/api/v1/usage`;
 const STATION_TWO_USAGE_STATS_URL = `${STATION_TWO_BASE_URL}/api/v1/usage/stats`;
+const STATION_THREE_BASE_URL = "https://9985678.xyz";
+const STATION_THREE_LOGIN_URL = `${STATION_THREE_BASE_URL}/api/user/login?turnstile=`;
+const STATION_THREE_SELF_URL = `${STATION_THREE_BASE_URL}/api/user/self`;
+const STATION_THREE_STATUS_URL = `${STATION_THREE_BASE_URL}/api/status`;
+const STATION_THREE_SUBSCRIPTION_SELF_URL = `${STATION_THREE_BASE_URL}/api/subscription/self`;
+const STATION_THREE_SUBSCRIPTION_PLANS_URL = `${STATION_THREE_BASE_URL}/api/subscription/plans`;
 const STATION_TWO_SESSION_PARTITION = "persist:key-dashboard-station-two";
+const STATION_THREE_SESSION_PARTITION = "persist:key-dashboard-station-three";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
 const STATION_TWO_PREFS_FILENAME = "station-two-auth.json";
 const STATION_TWO_TIMEOUT_MS = 20000;
 const STATION_TWO_USAGE_PAGE_SIZE = 10;
+const STATION_THREE_TIMEOUT_MS = 20000;
+const STATION_THREE_DEFAULT_QUOTA_PER_UNIT = 500000;
 const TOKEN_REFRESH_BUFFER_MS = 120000;
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 const DASHBOARD_RANGE = "day";
@@ -41,6 +50,14 @@ const stationTwoState = {
   refreshToken: "",
   expiresAt: 0,
   refreshSupported: null
+};
+const stationThreeState = {
+  username: "",
+  password: "",
+  userId: "",
+  displayName: "",
+  group: "",
+  quotaPerUnit: STATION_THREE_DEFAULT_QUOTA_PER_UNIT
 };
 let stationTwoProxyConfigured = null;
 let stationTwoUsageApiKeysCache = {
@@ -330,6 +347,10 @@ function getStationTwoSessionPartition() {
   return session.fromPartition(STATION_TWO_SESSION_PARTITION, { cache: true });
 }
 
+function getStationThreeSessionPartition() {
+  return session.fromPartition(STATION_THREE_SESSION_PARTITION, { cache: true });
+}
+
 async function ensureStationTwoProxy(proxyUrl) {
   const normalizedProxy = normalizeStationTwoProxy(proxyUrl);
   const targetSession = getStationTwoSessionPartition();
@@ -389,6 +410,51 @@ function clearStationTwoSession({ clearCredentials = false } = {}) {
   }
 }
 
+function buildStationThreeAuthRequiredError(message = "998Code 登录已失效，请重新登录") {
+  const error = new Error(message);
+  error.code = "STATION_THREE_AUTH_REQUIRED";
+  return error;
+}
+
+function setStationThreeCredentials({ username, password, userId, displayName, group, quotaPerUnit } = {}) {
+  if (typeof username === "string" && username.trim()) {
+    stationThreeState.username = username.trim();
+  }
+
+  if (typeof password === "string" && password) {
+    stationThreeState.password = password;
+  }
+
+  if (typeof userId === "string" || typeof userId === "number") {
+    stationThreeState.userId = String(userId || "").trim();
+  }
+
+  if (typeof displayName === "string" && displayName.trim()) {
+    stationThreeState.displayName = displayName.trim();
+  }
+
+  if (typeof group === "string" && group.trim()) {
+    stationThreeState.group = group.trim();
+  }
+
+  const numericQuotaPerUnit = Number(quotaPerUnit);
+  if (Number.isFinite(numericQuotaPerUnit) && numericQuotaPerUnit > 0) {
+    stationThreeState.quotaPerUnit = numericQuotaPerUnit;
+  }
+}
+
+function clearStationThreeSession({ clearCredentials = false } = {}) {
+  stationThreeState.userId = "";
+  stationThreeState.displayName = "";
+  stationThreeState.group = "";
+  stationThreeState.quotaPerUnit = STATION_THREE_DEFAULT_QUOTA_PER_UNIT;
+
+  if (clearCredentials) {
+    stationThreeState.username = "";
+    stationThreeState.password = "";
+  }
+}
+
 function getStationTwoTimezone() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -410,6 +476,24 @@ function getDateStringInTimeZone(date = new Date(), timeZone = "UTC") {
   const day = parts.find((part) => part.type === "day")?.value || "01";
 
   return `${year}-${month}-${day}`;
+}
+
+function normalizeQuotaPerUnit(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? numericValue
+    : STATION_THREE_DEFAULT_QUOTA_PER_UNIT;
+}
+
+function quotaToUsd(quota, quotaPerUnit = STATION_THREE_DEFAULT_QUOTA_PER_UNIT) {
+  const numericQuota = Number(quota);
+  const numericQuotaPerUnit = normalizeQuotaPerUnit(quotaPerUnit);
+
+  if (!Number.isFinite(numericQuota)) {
+    return null;
+  }
+
+  return numericQuota / numericQuotaPerUnit;
 }
 
 function setStationTwoCredentials({ email, password, proxyUrl } = {}) {
@@ -577,6 +661,71 @@ function getDefaultStationTwoUsagePagination({ page = 1, pageSize = STATION_TWO_
   };
 }
 
+function normalizeStationThreePlans(items) {
+  const plans = Array.isArray(items) ? items : [];
+  const planMap = new Map();
+
+  for (const item of plans) {
+    const plan = item?.plan || item;
+    const id = Number(plan?.id);
+    if (!Number.isFinite(id)) continue;
+    planMap.set(id, plan);
+  }
+
+  return planMap;
+}
+
+function normalizeStationThreeSubscriptions(items, plansById, quotaPerUnit) {
+  const subscriptions = Array.isArray(items) ? items : [];
+
+  return subscriptions.map((item) => {
+    const subscription = item?.subscription || item || {};
+    const planId = Number(subscription?.plan_id);
+    const plan = Number.isFinite(planId) ? plansById.get(planId) : null;
+    const totalQuota = Number(subscription?.amount_total);
+    const usedQuota = Number(subscription?.amount_used);
+    const remainingQuota = Number.isFinite(totalQuota) && Number.isFinite(usedQuota)
+      ? Math.max(0, totalQuota - usedQuota)
+      : null;
+
+    return {
+      id: subscription?.id ?? null,
+      planId: Number.isFinite(planId) ? planId : null,
+      title: String(plan?.title || "").trim() || (Number.isFinite(planId) ? `套餐 #${planId}` : "未命名订阅"),
+      subtitle: String(plan?.subtitle || "").trim() || "",
+      status: String(subscription?.status || "").trim() || "unknown",
+      source: String(subscription?.source || "").trim() || "—",
+      startAt: subscription?.start_time ?? null,
+      endAt: subscription?.end_time ?? null,
+      nextResetAt: subscription?.next_reset_time ?? null,
+      totalUsd: quotaToUsd(totalQuota, quotaPerUnit),
+      usedUsd: quotaToUsd(usedQuota, quotaPerUnit),
+      remainingUsd: quotaToUsd(remainingQuota, quotaPerUnit),
+      totalQuota: Number.isFinite(totalQuota) ? totalQuota : null,
+      usedQuota: Number.isFinite(usedQuota) ? usedQuota : null,
+      remainingQuota: Number.isFinite(remainingQuota) ? remainingQuota : null,
+      priceAmount: Number(plan?.price_amount),
+      currency: String(plan?.currency || "").trim() || "USD",
+      durationUnit: String(plan?.duration_unit || "").trim() || "",
+      durationValue: Number(plan?.duration_value),
+      quotaResetPeriod: String(plan?.quota_reset_period || "").trim() || ""
+    };
+  });
+}
+
+function summarizeStationThreeUser(user, quotaPerUnit) {
+  const normalizedUser = user && typeof user === "object" ? user : {};
+
+  return {
+    username: String(normalizedUser.username || "").trim() || stationThreeState.username || "未登录",
+    displayName: String(normalizedUser.display_name || "").trim() || String(normalizedUser.username || "").trim() || "未登录",
+    group: String(normalizedUser.group || "").trim() || "—",
+    balanceUsd: quotaToUsd(normalizedUser.quota, quotaPerUnit),
+    usedUsd: quotaToUsd(normalizedUser.used_quota, quotaPerUnit),
+    requestCount: Number.isFinite(Number(normalizedUser.request_count)) ? Number(normalizedUser.request_count) : 0
+  };
+}
+
 function unwrapStationTwoPayload(bodyText) {
   let parsed;
 
@@ -620,6 +769,142 @@ function toStationTwoUserFacingError(error) {
 
   if (/响应解析失败/.test(message)) {
     return new Error("站点二返回了无法解析的数据，请稍后重试");
+  }
+
+  return new Error(message);
+}
+
+function requestStationThree(url, { method = "GET", headers = {}, body = "" } = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let responseData = "";
+    let timeoutId = null;
+    let request;
+
+    const finishResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      resolve(value);
+    };
+
+    const finishReject = (error) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      reject(error);
+    };
+
+    try {
+      request = net.request({
+        method,
+        url,
+        redirect: "follow",
+        session: getStationThreeSessionPartition()
+      });
+
+      request.setHeader("Accept", "application/json, text/plain, */*");
+      request.setHeader("Accept-Encoding", "identity");
+      request.setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Electron");
+
+      Object.entries(headers).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") return;
+        request.setHeader(key, value);
+      });
+
+      request.on("response", (response) => {
+        response.on("data", (chunk) => {
+          responseData += chunk.toString();
+        });
+
+        response.on("end", () => {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            finishResolve({
+              statusCode: response.statusCode,
+              bodyText: responseData
+            });
+            return;
+          }
+
+          const detail = formatErrorDetail(responseData);
+          const suffix = detail ? `: ${detail}` : "";
+          const error = new Error(`HTTP ${response.statusCode}${suffix}`);
+          error.statusCode = response.statusCode;
+          finishReject(error);
+        });
+      });
+
+      request.on("error", (error) => {
+        finishReject(error);
+      });
+
+      timeoutId = setTimeout(() => {
+        const timeoutError = new Error("请求超时");
+        timeoutError.code = "ETIMEDOUT";
+        finishReject(timeoutError);
+        request.abort();
+      }, STATION_THREE_TIMEOUT_MS);
+
+      if (body) {
+        request.write(body);
+      }
+
+      request.end();
+    } catch (error) {
+      finishReject(error);
+    }
+  });
+}
+
+function unwrapStationThreePayload(bodyText) {
+  let parsed;
+
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    throw new Error("响应解析失败");
+  }
+
+  if (parsed && typeof parsed === "object" && parsed.success === true) {
+    return parsed.data;
+  }
+
+  const detail = parsed && typeof parsed.message === "string"
+    ? parsed.message
+    : formatErrorDetail(bodyText);
+
+  throw new Error(detail || "998Code 接口返回异常");
+}
+
+function toStationThreeUserFacingError(error) {
+  const message = error && error.message ? error.message : "998Code 请求失败";
+  const statusCode = error && error.statusCode ? Number(error.statusCode) : 0;
+  const code = error && error.code ? String(error.code) : "";
+
+  if (isRetryableNetworkError(error)) {
+    return new Error("998Code 网络请求失败，请检查当前网络后重试");
+  }
+
+  if (code === "STATION_THREE_AUTH_REQUIRED") {
+    return buildStationThreeAuthRequiredError(message);
+  }
+
+  if (statusCode === 401 || statusCode === 403 || /^HTTP 401\b|^HTTP 403\b/i.test(message)) {
+    return buildStationThreeAuthRequiredError();
+  }
+
+  if (statusCode === 404 || /^HTTP 404\b/i.test(message)) {
+    return new Error("998Code 当前部署缺少所需接口，请确认站点版本是否兼容");
+  }
+
+  if (/响应解析失败/.test(message)) {
+    return new Error("998Code 返回了无法解析的数据，请稍后重试");
   }
 
   return new Error(message);
@@ -1135,6 +1420,173 @@ async function fetchStationTwoUsage({
   throw new Error("站点二请求失败");
 }
 
+async function loginStationThree({ username, password } = {}) {
+  const resolvedUsername = typeof username === "string" && username.trim() ? username.trim() : stationThreeState.username;
+  const resolvedPassword = typeof password === "string" && password ? password : stationThreeState.password;
+
+  if (!resolvedUsername || !resolvedPassword) {
+    throw new Error("请输入 998Code 用户名和密码");
+  }
+
+  const requestBody = JSON.stringify({
+    username: resolvedUsername,
+    password: resolvedPassword
+  });
+
+  const { bodyText } = await requestStationThree(STATION_THREE_LOGIN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: STATION_THREE_BASE_URL,
+      Referer: `${STATION_THREE_BASE_URL}/login`
+    },
+    body: requestBody
+  });
+  const payload = unwrapStationThreePayload(bodyText);
+
+  setStationThreeCredentials({
+    username: resolvedUsername,
+    password: resolvedPassword,
+    userId: payload?.id,
+    displayName: payload?.display_name,
+    group: payload?.group
+  });
+
+  return payload;
+}
+
+function buildStationThreeUserHeaders(userId) {
+  const resolvedUserId = String(userId || stationThreeState.userId || "").trim();
+  if (!resolvedUserId) {
+    throw buildStationThreeAuthRequiredError();
+  }
+
+  return {
+    "New-Api-User": resolvedUserId,
+    Referer: `${STATION_THREE_BASE_URL}/`
+  };
+}
+
+async function ensureStationThreeSession({ username, password, allowLogin = false } = {}) {
+  setStationThreeCredentials({ username, password });
+
+  if (stationThreeState.userId) {
+    return stationThreeState.userId;
+  }
+
+  if (!allowLogin) {
+    throw buildStationThreeAuthRequiredError();
+  }
+
+  const payload = await loginStationThree({
+    username: stationThreeState.username,
+    password: stationThreeState.password
+  });
+
+  return String(payload?.id || stationThreeState.userId || "").trim();
+}
+
+async function fetchStationThreeStatus() {
+  const { bodyText } = await requestStationThree(STATION_THREE_STATUS_URL, {
+    method: "GET",
+    headers: {
+      Referer: `${STATION_THREE_BASE_URL}/`
+    }
+  });
+
+  return unwrapStationThreePayload(bodyText);
+}
+
+async function fetchStationThreeSelf(userId) {
+  const { bodyText } = await requestStationThree(STATION_THREE_SELF_URL, {
+    method: "GET",
+    headers: buildStationThreeUserHeaders(userId)
+  });
+
+  return unwrapStationThreePayload(bodyText);
+}
+
+async function fetchStationThreeSubscriptionSelf(userId) {
+  const { bodyText } = await requestStationThree(STATION_THREE_SUBSCRIPTION_SELF_URL, {
+    method: "GET",
+    headers: buildStationThreeUserHeaders(userId)
+  });
+
+  return unwrapStationThreePayload(bodyText);
+}
+
+async function fetchStationThreeSubscriptionPlans(userId) {
+  const { bodyText } = await requestStationThree(STATION_THREE_SUBSCRIPTION_PLANS_URL, {
+    method: "GET",
+    headers: buildStationThreeUserHeaders(userId)
+  });
+
+  return unwrapStationThreePayload(bodyText);
+}
+
+function buildStationThreeSessionSnapshot(summary) {
+  return {
+    username: summary?.username || stationThreeState.username || "",
+    displayName: summary?.displayName || stationThreeState.displayName || "",
+    group: summary?.group || stationThreeState.group || "",
+    userId: stationThreeState.userId || "",
+    quotaPerUnit: stationThreeState.quotaPerUnit || STATION_THREE_DEFAULT_QUOTA_PER_UNIT
+  };
+}
+
+async function fetchStationThreeDashboard({ username, password, allowLogin = false } = {}) {
+  setStationThreeCredentials({ username, password });
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const userId = await ensureStationThreeSession({
+        username: stationThreeState.username,
+        password: stationThreeState.password,
+        allowLogin
+      });
+      const [user, subscriptionSelf, statusResult, plansResult] = await Promise.all([
+        fetchStationThreeSelf(userId),
+        fetchStationThreeSubscriptionSelf(userId),
+        fetchStationThreeStatus().catch(() => null),
+        fetchStationThreeSubscriptionPlans(userId).catch(() => [])
+      ]);
+
+      const quotaPerUnit = normalizeQuotaPerUnit(statusResult?.quota_per_unit);
+      const plansById = normalizeStationThreePlans(plansResult);
+      const summary = summarizeStationThreeUser(user, quotaPerUnit);
+      const subscriptions = normalizeStationThreeSubscriptions(subscriptionSelf?.subscriptions, plansById, quotaPerUnit);
+
+      setStationThreeCredentials({
+        userId,
+        username: summary.username,
+        displayName: summary.displayName,
+        group: summary.group,
+        quotaPerUnit
+      });
+
+      return {
+        summary,
+        subscriptions,
+        billingPreference: String(subscriptionSelf?.billing_preference || "").trim() || "",
+        session: buildStationThreeSessionSnapshot(summary)
+      };
+    } catch (error) {
+      const statusCode = Number(error && error.statusCode ? error.statusCode : 0);
+      if ((statusCode === 401 || statusCode === 403) && attempt === 1) {
+        clearStationThreeSession();
+        if (allowLogin) {
+          continue;
+        }
+        throw buildStationThreeAuthRequiredError();
+      }
+
+      throw toStationThreeUserFacingError(error);
+    }
+  }
+
+  throw new Error("998Code 请求失败");
+}
+
 async function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -1194,6 +1646,10 @@ ipcMain.handle("fetch-station-two-dashboard", (_event, payload = {}) => {
 
 ipcMain.handle("fetch-station-two-usage", (_event, payload = {}) => {
   return fetchStationTwoUsage(payload);
+});
+
+ipcMain.handle("fetch-station-three-dashboard", (_event, payload = {}) => {
+  return fetchStationThreeDashboard(payload);
 });
 
 ipcMain.handle("get-station-two-preferences", () => {

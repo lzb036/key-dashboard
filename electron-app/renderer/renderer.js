@@ -2,6 +2,7 @@ const STORAGE_KEY = "cto_dashboard_key";
 const SOURCE_STORAGE_KEY = "cto_dashboard_source";
 const STATION_TWO_EMAIL_KEY = "station_two_email";
 const STATION_TWO_PROXY_KEY = "station_two_proxy";
+const ATLAS_USERNAME_KEY = "atlas_username";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
 const PAGE_LIMIT = 10;
 const STATION_TWO_USAGE_PAGE_SIZE = 10;
@@ -62,6 +63,23 @@ const els = {
   stationTwoDashboardMsg: document.getElementById("stationTwoDashboardMsg"),
   stationTwoReloginBtn: document.getElementById("stationTwoReloginBtn"),
   stationTwoEmailReadout: document.getElementById("stationTwoEmailReadout"),
+  atlasLoginShell: document.getElementById("atlasLoginShell"),
+  atlasDashboardShell: document.getElementById("atlasDashboardShell"),
+  atlasUsernameInput: document.getElementById("atlasUsernameInput"),
+  atlasPasswordInput: document.getElementById("atlasPasswordInput"),
+  atlasToggleBtn: document.getElementById("atlasToggleBtn"),
+  atlasLoginBtn: document.getElementById("atlasLoginBtn"),
+  atlasLoginLabel: document.querySelector("#atlasLoginBtn .btn-label"),
+  atlasLoginMsg: document.getElementById("atlasLoginMsg"),
+  atlasBalanceAmount: document.getElementById("atlasBalanceAmount"),
+  atlasUsedAmount: document.getElementById("atlasUsedAmount"),
+  atlasRequestCount: document.getElementById("atlasRequestCount"),
+  atlasUsernameReadout: document.getElementById("atlasUsernameReadout"),
+  atlasRefreshBtn: document.getElementById("atlasRefreshBtn"),
+  atlasRefreshLabel: document.querySelector("#atlasRefreshBtn .btn-label"),
+  atlasDashboardMsg: document.getElementById("atlasDashboardMsg"),
+  atlasReloginBtn: document.getElementById("atlasReloginBtn"),
+  atlasSubscriptionBody: document.getElementById("atlasSubscriptionBody"),
   linkModal: document.getElementById("linkModal"),
   linkModalBackdrop: document.getElementById("linkModalBackdrop"),
   linkModalTitle: document.getElementById("linkModalTitle"),
@@ -97,6 +115,10 @@ let stationTwoUsagePage = 1;
 let stationTwoUsageTotalItems = 0;
 let stationTwoUsagePageSize = STATION_TWO_USAGE_PAGE_SIZE;
 let stationTwoUsageTotalPages = 1;
+let atlasHasSnapshot = false;
+let atlasLoading = false;
+let atlasView = "login";
+let atlasSession = null;
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -131,6 +153,12 @@ function fmtDate(value) {
   }).format(d).replace(/\//g, "-");
 }
 
+function fmtUnixDate(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return "—";
+  return fmtDate(numericValue * 1000);
+}
+
 function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -157,6 +185,14 @@ function setStationTwoMessage(text, tone = "") {
   if (text) announce(text);
 }
 
+function setAtlasMessage(text, tone = "") {
+  [els.atlasLoginMsg, els.atlasDashboardMsg].forEach((node) => {
+    node.textContent = text;
+    node.className = "msg" + (tone ? ` ${tone}` : "");
+  });
+  if (text) announce(text);
+}
+
 function setButtonLoading(loading) {
   isLoading = Boolean(loading);
   els.refreshBtn.disabled = isLoading;
@@ -173,6 +209,16 @@ function setStationTwoButtonLoading(loading) {
   els.stationTwoRefreshBtn.classList.toggle("is-loading", stationTwoLoading && stationTwoView === "dashboard");
   els.stationTwoLoginLabel.textContent = stationTwoLoading && stationTwoView === "login" ? "登录中..." : "登录";
   els.stationTwoRefreshLabel.textContent = stationTwoLoading && stationTwoView === "dashboard" ? "刷新中..." : "刷新数据";
+}
+
+function setAtlasButtonLoading(loading) {
+  atlasLoading = Boolean(loading);
+  els.atlasLoginBtn.disabled = atlasLoading;
+  els.atlasRefreshBtn.disabled = atlasLoading;
+  els.atlasLoginBtn.classList.toggle("is-loading", atlasLoading && atlasView === "login");
+  els.atlasRefreshBtn.classList.toggle("is-loading", atlasLoading && atlasView === "dashboard");
+  els.atlasLoginLabel.textContent = atlasLoading && atlasView === "login" ? "登录中..." : "登录";
+  els.atlasRefreshLabel.textContent = atlasLoading && atlasView === "dashboard" ? "刷新中..." : "刷新数据";
 }
 
 function getStationTwoPreferencePayload({ passwordOverride } = {}) {
@@ -740,6 +786,155 @@ function renderStationTwoError(message) {
   setStationTwoMessage(message, "error");
 }
 
+function syncAtlasToggleState() {
+  const isVisible = els.atlasPasswordInput.type === "text";
+  els.atlasToggleBtn.textContent = isVisible ? "隐藏" : "显示";
+  els.atlasToggleBtn.setAttribute("aria-pressed", String(isVisible));
+  els.atlasToggleBtn.setAttribute("aria-label", `${isVisible ? "隐藏" : "显示"} 998Code 密码`);
+}
+
+function setAtlasView(view) {
+  const resolvedView = view === "dashboard" ? "dashboard" : "login";
+  atlasView = resolvedView;
+  els.atlasLoginShell.hidden = resolvedView !== "login";
+  els.atlasDashboardShell.hidden = resolvedView !== "dashboard";
+  setAtlasButtonLoading(false);
+}
+
+function isAtlasAuthRequired(message) {
+  return /登录已失效|重新登录|AUTH_REQUIRED/i.test(String(message || ""));
+}
+
+function syncAtlasSessionChrome({ displayName, username } = {}) {
+  const resolvedName = String(displayName || username || els.atlasUsernameInput.value || "").trim();
+  els.atlasUsernameReadout.textContent = resolvedName || "未填写";
+}
+
+function setAtlasSummaryValues({ balanceUsd, usedUsd, requestCount } = {}) {
+  const balanceValue = numberOrNull(balanceUsd);
+  els.atlasBalanceAmount.textContent = balanceValue !== null ? fmtMoney(balanceValue) : "登录后查看";
+  els.atlasBalanceAmount.className = `balance-amount${balanceValue !== null ? "" : " empty"}`;
+  els.atlasUsedAmount.textContent = numberOrNull(usedUsd) !== null ? fmtMoney(usedUsd) : "—";
+  els.atlasRequestCount.textContent = numberOrNull(requestCount) !== null ? fmtCount(requestCount) : "—";
+}
+
+function renderAtlasSubscriptions(items) {
+  if (!els.atlasSubscriptionBody) return;
+  const subscriptions = Array.isArray(items) ? items : [];
+
+  if (!subscriptions.length) {
+    els.atlasSubscriptionBody.innerHTML = emptyStateMarkup("暂无生效订阅", "当前账号下还没有正在生效中的订阅套餐。");
+    return;
+  }
+
+  els.atlasSubscriptionBody.innerHTML = subscriptions.map((item, index) => `
+    <article class="atlas-subscription-card" style="--delay:${index * 42}ms">
+      <div class="atlas-subscription-head">
+        <div class="atlas-subscription-copy">
+          <strong class="atlas-subscription-title">${esc(item.title || "未命名订阅")}</strong>
+          <span class="atlas-subscription-subtitle">${esc(item.subtitle || item.source || "当前生效中")}</span>
+        </div>
+        <span class="atlas-subscription-status">${esc(item.status || "active")}</span>
+      </div>
+
+      <div class="atlas-subscription-metrics">
+        <div class="atlas-subscription-metric">
+          <span class="atlas-subscription-label">已用 / 总额</span>
+          <strong class="atlas-subscription-value">${esc(fmtMoney(item.usedUsd))} / ${esc(fmtMoney(item.totalUsd))}</strong>
+        </div>
+        <div class="atlas-subscription-metric">
+          <span class="atlas-subscription-label">剩余额度</span>
+          <strong class="atlas-subscription-value atlas-subscription-value--accent">${esc(fmtMoney(item.remainingUsd))}</strong>
+        </div>
+      </div>
+
+      <div class="atlas-subscription-meta">
+        <span>开始：${esc(fmtUnixDate(item.startAt))}</span>
+        <span>到期：${esc(fmtUnixDate(item.endAt))}</span>
+        <span>下次重置：${esc(fmtUnixDate(item.nextResetAt))}</span>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderAtlasIdleState() {
+  if (!atlasHasSnapshot) {
+    setAtlasSummaryValues({ balanceUsd: null, usedUsd: null, requestCount: null });
+    renderAtlasSubscriptions([]);
+    setAtlasView("login");
+  } else {
+    setAtlasView("dashboard");
+  }
+  syncAtlasSessionChrome({
+    username: els.atlasUsernameInput.value.trim() || atlasSession?.username || "",
+    displayName: atlasSession?.displayName || ""
+  });
+  setAtlasMessage("");
+  setAtlasButtonLoading(false);
+}
+
+function renderAtlasLoadingState() {
+  els.atlasBalanceAmount.textContent = "同步中...";
+  els.atlasBalanceAmount.className = "balance-amount empty";
+  els.atlasUsedAmount.textContent = "—";
+  els.atlasRequestCount.textContent = "—";
+  els.atlasSubscriptionBody.innerHTML = [0, 1].map((index) => `
+    <article class="atlas-subscription-card" style="--delay:${index * 36}ms;animation:none;opacity:1;transform:none;">
+      <div class="atlas-subscription-head">
+        <div class="atlas-subscription-copy">
+          <strong class="atlas-subscription-title skeleton">中杯</strong>
+          <span class="atlas-subscription-subtitle skeleton">current active</span>
+        </div>
+        <span class="atlas-subscription-status skeleton">active</span>
+      </div>
+      <div class="atlas-subscription-metrics">
+        <div class="atlas-subscription-metric">
+          <span class="atlas-subscription-label">已用 / 总额</span>
+          <strong class="atlas-subscription-value skeleton">$20.02 / $60.00</strong>
+        </div>
+        <div class="atlas-subscription-metric">
+          <span class="atlas-subscription-label">剩余额度</span>
+          <strong class="atlas-subscription-value atlas-subscription-value--accent skeleton">$39.98</strong>
+        </div>
+      </div>
+      <div class="atlas-subscription-meta">
+        <span class="skeleton">开始：03-12 20:20:20</span>
+        <span class="skeleton">到期：04-12 20:20:20</span>
+        <span class="skeleton">下次重置：03-18 00:00:00</span>
+      </div>
+    </article>
+  `).join("");
+  syncAtlasSessionChrome({
+    username: els.atlasUsernameInput.value.trim() || atlasSession?.username || "",
+    displayName: atlasSession?.displayName || ""
+  });
+}
+
+function renderAtlasData(data) {
+  const summary = data?.summary || {};
+  atlasSession = data?.session || {};
+  atlasHasSnapshot = true;
+  setAtlasSummaryValues({
+    balanceUsd: summary.balanceUsd,
+    usedUsd: summary.usedUsd,
+    requestCount: summary.requestCount
+  });
+  renderAtlasSubscriptions(data?.subscriptions);
+  syncAtlasSessionChrome({
+    username: summary.username || atlasSession?.username || "",
+    displayName: summary.displayName || atlasSession?.displayName || ""
+  });
+  setAtlasView("dashboard");
+}
+
+function renderAtlasError(message) {
+  if (!atlasHasSnapshot) {
+    setAtlasSummaryValues({ balanceUsd: null, usedUsd: null, requestCount: null });
+    renderAtlasSubscriptions([]);
+  }
+  setAtlasMessage(message, "error");
+}
+
 async function loginStationTwo() {
   const payload = {
     email: els.stationTwoEmailInput.value.trim(),
@@ -860,6 +1055,76 @@ async function refreshStationTwoUsagePage(targetPage = stationTwoUsagePage) {
   }
 }
 
+async function loginAtlas() {
+  const payload = {
+    username: els.atlasUsernameInput.value.trim(),
+    password: els.atlasPasswordInput.value
+  };
+  if (!payload.username || !payload.password) {
+    setAtlasMessage("请输入 998Code 用户名和密码", "error");
+    if (!payload.username) {
+      els.atlasUsernameInput.focus();
+    } else {
+      els.atlasPasswordInput.focus();
+    }
+    return;
+  }
+
+  setAtlasView("login");
+  setAtlasButtonLoading(true);
+  setAtlasMessage("");
+  try {
+    const data = await window.api.fetchStationThreeDashboard({
+      ...payload,
+      allowLogin: true
+    });
+    localStorage.setItem(ATLAS_USERNAME_KEY, payload.username);
+    renderAtlasData(data);
+    setAtlasMessage("登录成功，已进入 998Code", "success");
+  } catch (error) {
+    renderAtlasError(error?.message || "998Code 同步失败，请稍后重试");
+  } finally {
+    setAtlasButtonLoading(false);
+  }
+}
+
+async function refreshAtlasDashboard() {
+  setAtlasView("dashboard");
+  setAtlasButtonLoading(true);
+  setAtlasMessage("");
+  renderAtlasLoadingState();
+  try {
+    const data = await window.api.fetchStationThreeDashboard({
+      username: els.atlasUsernameInput.value.trim(),
+      password: els.atlasPasswordInput.value,
+      allowLogin: Boolean(els.atlasPasswordInput.value)
+    });
+    renderAtlasData(data);
+    setAtlasMessage("998Code 数据已更新", "success");
+  } catch (error) {
+    const message = error?.message || "998Code 同步失败，请稍后重试";
+    if (isAtlasAuthRequired(message)) {
+      atlasHasSnapshot = false;
+      atlasSession = null;
+      els.atlasPasswordInput.value = "";
+      setAtlasView("login");
+      setAtlasMessage("登录已过期，请重新登录", "error");
+      return;
+    }
+    renderAtlasError(message);
+  } finally {
+    setAtlasButtonLoading(false);
+  }
+}
+
+function reloginAtlas() {
+  atlasHasSnapshot = false;
+  atlasSession = null;
+  els.atlasPasswordInput.value = "";
+  renderAtlasIdleState();
+  announce("已退出 998Code 会话");
+}
+
 async function reloginStationTwo() {
   if (window.api && typeof window.api.clearStationTwoSession === "function") {
     await window.api.clearStationTwoSession();
@@ -941,6 +1206,12 @@ els.stationTwoToggleBtn.addEventListener("click", () => {
   announce(els.stationTwoPasswordInput.type === "text" ? "已显示 YesCode 密码" : "已隐藏 YesCode 密码");
 });
 
+els.atlasToggleBtn.addEventListener("click", () => {
+  els.atlasPasswordInput.type = els.atlasPasswordInput.type === "password" ? "text" : "password";
+  syncAtlasToggleState();
+  announce(els.atlasPasswordInput.type === "text" ? "已显示 998Code 密码" : "已隐藏 998Code 密码");
+});
+
 els.stationTwoAdvancedToggle.addEventListener("click", () => {
   const willOpen = !els.stationTwoAdvancedSettings.classList.contains("is-open");
   setStationTwoAdvancedSettingsOpen(willOpen);
@@ -1003,6 +1274,16 @@ els.stationTwoProxyInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") loginStationTwo();
 });
 
+els.atlasLoginBtn.addEventListener("click", loginAtlas);
+els.atlasRefreshBtn.addEventListener("click", refreshAtlasDashboard);
+els.atlasReloginBtn.addEventListener("click", reloginAtlas);
+els.atlasUsernameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loginAtlas();
+});
+els.atlasPasswordInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loginAtlas();
+});
+
 els.viewOfficialBtn.addEventListener("click", () => openLinkModal("official"));
 els.viewGuideBtn.addEventListener("click", () => openLinkModal("guide"));
 els.linkModalBackdrop.addEventListener("click", closeLinkModal);
@@ -1033,16 +1314,21 @@ els.sourceTabs.forEach((tab) => {
 const saved = localStorage.getItem(STORAGE_KEY);
 if (saved) els.keyInput.value = saved;
 
+const savedAtlasUsername = localStorage.getItem(ATLAS_USERNAME_KEY);
+if (savedAtlasUsername) els.atlasUsernameInput.value = savedAtlasUsername;
+
 const savedSource = localStorage.getItem(SOURCE_STORAGE_KEY);
 if (savedSource && SOURCE_CONFIG[savedSource]) currentSource = savedSource;
 
 syncToggleState();
 syncStationTwoToggleState();
+syncAtlasToggleState();
 setStationTwoAdvancedSettingsOpen(false);
 requestAnimationFrame(async () => {
   document.body.classList.add("ready");
   renderIdleState();
   renderStationTwoIdleState();
+  renderAtlasIdleState();
   await initializeStationTwoPreferences();
   setActiveSource(currentSource, { persist: false });
 });
