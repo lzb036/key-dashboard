@@ -65,6 +65,8 @@ const els = {
   atlasDashboardShell: document.getElementById("atlasDashboardShell"),
   atlasUsernameInput: document.getElementById("atlasUsernameInput"),
   atlasPasswordInput: document.getElementById("atlasPasswordInput"),
+  atlasRememberToggle: document.getElementById("atlasRememberToggle"),
+  atlasAutoLoginToggle: document.getElementById("atlasAutoLoginToggle"),
   atlasToggleBtn: document.getElementById("atlasToggleBtn"),
   atlasLoginBtn: document.getElementById("atlasLoginBtn"),
   atlasLoginLabel: document.querySelector("#atlasLoginBtn .btn-label"),
@@ -117,6 +119,7 @@ let atlasHasSnapshot = false;
 let atlasLoading = false;
 let atlasView = "login";
 let atlasSession = null;
+let atlasAutoLoginAttempted = false;
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -240,6 +243,26 @@ async function persistStationTwoPreferences(options = {}) {
   return window.api.saveStationTwoPreferences(getStationTwoPreferencePayload(options));
 }
 
+function getAtlasPreferencePayload({ passwordOverride } = {}) {
+  const rememberPassword = els.atlasRememberToggle.checked;
+  const autoLogin = rememberPassword && els.atlasAutoLoginToggle.checked;
+
+  return {
+    username: rememberPassword ? els.atlasUsernameInput.value.trim() : "",
+    password: rememberPassword ? String((passwordOverride ?? els.atlasPasswordInput.value) || "") : "",
+    rememberPassword,
+    autoLogin
+  };
+}
+
+async function persistAtlasPreferences(options = {}) {
+  if (!window.api || typeof window.api.saveStationThreePreferences !== "function") {
+    return null;
+  }
+
+  return window.api.saveStationThreePreferences(getAtlasPreferencePayload(options));
+}
+
 function emptyStateMarkup(title, text) {
   return `<div class="empty-state"><div class="empty-orb" aria-hidden="true"></div><p class="empty-title">${esc(title)}</p><p class="empty-text">${esc(text)}</p></div>`;
 }
@@ -349,6 +372,8 @@ function setActiveSource(sourceKey, { persist = true } = {}) {
 
   if (source === "nova") {
     void maybeAutoLoginStationTwo({ force: true });
+  } else if (source === "atlas") {
+    void maybeAutoLoginAtlas({ force: true });
   }
 }
 
@@ -670,6 +695,18 @@ function syncStationTwoPreferenceState() {
   els.stationTwoAutoLoginToggle.closest(".station-two-option-chip")?.classList.toggle(
     "is-disabled",
     els.stationTwoAutoLoginToggle.disabled
+  );
+}
+
+function syncAtlasPreferenceState() {
+  if (!els.atlasRememberToggle.checked) {
+    els.atlasAutoLoginToggle.checked = false;
+  }
+
+  els.atlasAutoLoginToggle.disabled = !els.atlasRememberToggle.checked;
+  els.atlasAutoLoginToggle.closest(".station-two-option-chip")?.classList.toggle(
+    "is-disabled",
+    els.atlasAutoLoginToggle.disabled
   );
 }
 
@@ -1070,7 +1107,12 @@ async function loginAtlas() {
       ...payload,
       allowLogin: true
     });
-    localStorage.setItem(ATLAS_USERNAME_KEY, payload.username);
+    if (payload.username) {
+      localStorage.setItem(ATLAS_USERNAME_KEY, payload.username);
+    }
+    await persistAtlasPreferences({
+      passwordOverride: payload.password
+    });
     renderAtlasData(data);
     setAtlasMessage("登录成功，已进入 998Code", "success");
   } catch (error) {
@@ -1112,6 +1154,7 @@ async function refreshAtlasDashboard() {
 function reloginAtlas() {
   atlasHasSnapshot = false;
   atlasSession = null;
+  atlasAutoLoginAttempted = true;
   els.atlasPasswordInput.value = "";
   renderAtlasIdleState();
   announce("已退出 998Code 会话");
@@ -1138,6 +1181,16 @@ async function maybeAutoLoginStationTwo({ force = false } = {}) {
 
   stationTwoAutoLoginAttempted = true;
   await loginStationTwo();
+}
+
+async function maybeAutoLoginAtlas({ force = false } = {}) {
+  if (atlasAutoLoginAttempted) return;
+  if (!els.atlasAutoLoginToggle.checked) return;
+  if (!els.atlasUsernameInput.value.trim() || !els.atlasPasswordInput.value) return;
+  if (!force && currentSource !== "atlas") return;
+
+  atlasAutoLoginAttempted = true;
+  await loginAtlas();
 }
 
 async function initializeStationTwoPreferences() {
@@ -1170,6 +1223,32 @@ async function initializeStationTwoPreferences() {
 
   if (currentSource === "nova") {
     await maybeAutoLoginStationTwo({ force: true });
+  }
+}
+
+async function initializeAtlasPreferences() {
+  let preferences = null;
+
+  if (window.api && typeof window.api.getStationThreePreferences === "function") {
+    try {
+      preferences = await window.api.getStationThreePreferences();
+    } catch {
+      preferences = null;
+    }
+  }
+
+  const legacyUsername = localStorage.getItem(ATLAS_USERNAME_KEY) || "";
+  const resolvedUsername = String(preferences?.username || legacyUsername || "").trim();
+  const resolvedPassword = String(preferences?.password || "");
+
+  els.atlasUsernameInput.value = resolvedUsername;
+  els.atlasPasswordInput.value = resolvedPassword;
+  els.atlasRememberToggle.checked = Boolean(preferences?.rememberPassword);
+  els.atlasAutoLoginToggle.checked = Boolean(preferences?.autoLogin && preferences?.rememberPassword);
+  syncAtlasPreferenceState();
+
+  if (currentSource === "atlas") {
+    await maybeAutoLoginAtlas({ force: true });
   }
 }
 
@@ -1219,6 +1298,23 @@ els.stationTwoAutoLoginToggle.addEventListener("change", async () => {
   }
   syncStationTwoPreferenceState();
   await persistStationTwoPreferences();
+});
+
+els.atlasRememberToggle.addEventListener("change", async () => {
+  if (!els.atlasRememberToggle.checked) {
+    atlasAutoLoginAttempted = false;
+  }
+  syncAtlasPreferenceState();
+  await persistAtlasPreferences();
+});
+
+els.atlasAutoLoginToggle.addEventListener("change", async () => {
+  if (els.atlasAutoLoginToggle.checked) {
+    els.atlasRememberToggle.checked = true;
+    atlasAutoLoginAttempted = false;
+  }
+  syncAtlasPreferenceState();
+  await persistAtlasPreferences();
 });
 
 els.stationTwoUsageFilter?.addEventListener("change", (event) => {
@@ -1301,20 +1397,19 @@ els.sourceTabs.forEach((tab) => {
 const saved = localStorage.getItem(STORAGE_KEY);
 if (saved) els.keyInput.value = saved;
 
-const savedAtlasUsername = localStorage.getItem(ATLAS_USERNAME_KEY);
-if (savedAtlasUsername) els.atlasUsernameInput.value = savedAtlasUsername;
-
 const savedSource = localStorage.getItem(SOURCE_STORAGE_KEY);
 if (savedSource && SOURCE_CONFIG[savedSource]) currentSource = savedSource;
 
 syncToggleState();
 syncStationTwoToggleState();
 syncAtlasToggleState();
+syncAtlasPreferenceState();
 requestAnimationFrame(async () => {
   document.body.classList.add("ready");
   renderIdleState();
   renderStationTwoIdleState();
   renderAtlasIdleState();
   await initializeStationTwoPreferences();
+  await initializeAtlasPreferences();
   setActiveSource(currentSource, { persist: false });
 });

@@ -23,6 +23,7 @@ const STATION_TWO_SESSION_PARTITION = "persist:key-dashboard-station-two";
 const STATION_THREE_SESSION_PARTITION = "persist:key-dashboard-station-three";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
 const STATION_TWO_PREFS_FILENAME = "station-two-auth.json";
+const STATION_THREE_PREFS_FILENAME = "station-three-auth.json";
 const STATION_TWO_TIMEOUT_MS = 20000;
 const STATION_TWO_USAGE_PAGE_SIZE = 10;
 const STATION_THREE_TIMEOUT_MS = 20000;
@@ -74,6 +75,10 @@ let stationTwoKeysCache = {
 
 function getStationTwoPreferencesPath() {
   return path.join(app.getPath("userData"), STATION_TWO_PREFS_FILENAME);
+}
+
+function getStationThreePreferencesPath() {
+  return path.join(app.getPath("userData"), STATION_THREE_PREFS_FILENAME);
 }
 
 function encodeStationTwoSecret(value) {
@@ -171,6 +176,64 @@ function writeStationTwoPreferences({ email, password, proxyUrl, rememberPasswor
     email: payload.email,
     password: resolvedRemember ? String(password || "") : "",
     proxyUrl: payload.proxyUrl || STATION_TWO_DEFAULT_PROXY,
+    rememberPassword: payload.rememberPassword,
+    autoLogin: payload.autoLogin
+  };
+}
+
+function getDefaultStationThreePreferences() {
+  return {
+    username: "",
+    password: "",
+    rememberPassword: false,
+    autoLogin: false
+  };
+}
+
+function readStationThreePreferences() {
+  const defaults = getDefaultStationThreePreferences();
+
+  try {
+    const filePath = getStationThreePreferencesPath();
+    if (!fs.existsSync(filePath)) {
+      return defaults;
+    }
+
+    const raw = fs.readFileSync(filePath, "utf8");
+    if (!raw.trim()) {
+      return defaults;
+    }
+
+    const parsed = JSON.parse(raw);
+    const rememberPassword = Boolean(parsed.rememberPassword);
+
+    return {
+      username: rememberPassword ? String(parsed.username || "").trim() : "",
+      password: rememberPassword ? decodeStationTwoSecret(parsed.password) : "",
+      rememberPassword,
+      autoLogin: rememberPassword && Boolean(parsed.autoLogin)
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function writeStationThreePreferences({ username, password, rememberPassword, autoLogin } = {}) {
+  const filePath = getStationThreePreferencesPath();
+  const resolvedRemember = Boolean(rememberPassword);
+  const payload = {
+    username: resolvedRemember ? String(username || "").trim() : "",
+    password: resolvedRemember ? encodeStationTwoSecret(password) : null,
+    rememberPassword: resolvedRemember,
+    autoLogin: resolvedRemember && Boolean(autoLogin)
+  };
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+
+  return {
+    username: payload.username,
+    password: resolvedRemember ? String(password || "") : "",
     rememberPassword: payload.rememberPassword,
     autoLogin: payload.autoLogin
   };
@@ -1897,6 +1960,14 @@ ipcMain.handle("get-station-two-preferences", () => {
 
 ipcMain.handle("save-station-two-preferences", (_event, payload = {}) => {
   return writeStationTwoPreferences(payload);
+});
+
+ipcMain.handle("get-station-three-preferences", () => {
+  return readStationThreePreferences();
+});
+
+ipcMain.handle("save-station-three-preferences", (_event, payload = {}) => {
+  return writeStationThreePreferences(payload);
 });
 
 ipcMain.handle("clear-station-two-session", () => {
