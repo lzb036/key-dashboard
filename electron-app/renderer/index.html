@@ -345,6 +345,22 @@
       </section>
 
       <div id="atlasDashboardShell" hidden>
+        <section class="panel distribution-panel reveal" aria-labelledby="atlasSubscriptionTitle">
+          <div class="panel-heading panel-heading--minimal">
+            <span class="panel-chip">Subscriptions</span>
+            <h2 id="atlasSubscriptionTitle" class="panel-title panel-title--compact">生效订阅</h2>
+            <p class="distribution-copy">展示 998Code 当前正在生效中的订阅套餐、有效期和额度使用情况。</p>
+          </div>
+
+          <div id="atlasSubscriptionBody" class="atlas-subscription-grid">
+            <div class="empty-state">
+              <div class="empty-orb" aria-hidden="true"></div>
+              <p class="empty-title">登录后查看订阅</p>
+              <p class="empty-text">同步成功后，这里会展示当前仍在生效中的订阅信息。</p>
+            </div>
+          </div>
+        </section>
+
         <section class="hero-grid hero-grid--compact station-two-grid" aria-label="998Code 核心面板">
           <article class="panel hero-panel hero-panel--minimal interactive-panel reveal station-two-hero" aria-labelledby="atlasBalanceAmount">
             <span class="panel-chip">Current Balance</span>
@@ -397,18 +413,37 @@
           </aside>
         </section>
 
-        <section class="panel distribution-panel reveal" aria-labelledby="atlasSubscriptionTitle">
-          <div class="panel-heading panel-heading--minimal">
-            <span class="panel-chip">Subscriptions</span>
-            <h2 id="atlasSubscriptionTitle" class="panel-title panel-title--compact">生效订阅</h2>
-            <p class="distribution-copy">展示 998Code 当前正在生效中的订阅套餐、有效期和额度使用情况。</p>
+        <section class="panel table-panel reveal" aria-labelledby="atlasUsageLogTitle">
+          <div class="table-top station-two-table-top">
+            <div class="table-copy-stack">
+              <span class="panel-chip">Today Logs</span>
+              <h2 id="atlasUsageLogTitle" class="table-title table-title--compact">当日使用日志</h2>
+              <p class="table-copy">仅展示今天的 998Code 调用日志，区分消费和错误类型。</p>
+            </div>
           </div>
 
-          <div id="atlasSubscriptionBody" class="atlas-subscription-grid">
+          <div class="table-grid table-grid--head table-grid--atlas-log" role="row">
+            <span role="columnheader">时间</span>
+            <span role="columnheader">令牌</span>
+            <span role="columnheader">类型</span>
+            <span role="columnheader">模型</span>
+            <span role="columnheader">花费</span>
+            <span role="columnheader">详情</span>
+          </div>
+
+          <div id="atlasUsageLogTableBody" class="table-body" role="rowgroup">
             <div class="empty-state">
               <div class="empty-orb" aria-hidden="true"></div>
-              <p class="empty-title">登录后查看订阅</p>
-              <p class="empty-text">同步成功后，这里会展示当前仍在生效中的订阅信息。</p>
+              <p class="empty-title">登录后查看日志</p>
+              <p class="empty-text">同步成功后，这里会展示 998Code 当天调用日志。</p>
+            </div>
+          </div>
+
+          <div id="atlasUsageLogPagination" class="table-pagination" hidden>
+            <div id="atlasUsageLogPaginationMeta" class="pagination-meta" aria-live="polite"></div>
+            <div class="pagination-actions">
+              <button id="atlasUsageLogPrevBtn" class="page-btn" type="button">上一页</button>
+              <button id="atlasUsageLogNextBtn" class="page-btn" type="button">下一页</button>
             </div>
           </div>
         </section>

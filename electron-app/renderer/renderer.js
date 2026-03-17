@@ -6,6 +6,7 @@ const ATLAS_USERNAME_KEY = "atlas_username";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
 const PAGE_LIMIT = 10;
 const STATION_TWO_USAGE_PAGE_SIZE = 10;
+const ATLAS_USAGE_LOG_PAGE_SIZE = 20;
 const SOURCE_CONFIG = {
   cto: { title: "hxrra" },
   nova: { title: "YesCode" },
@@ -80,6 +81,11 @@ const els = {
   atlasDashboardMsg: document.getElementById("atlasDashboardMsg"),
   atlasReloginBtn: document.getElementById("atlasReloginBtn"),
   atlasSubscriptionBody: document.getElementById("atlasSubscriptionBody"),
+  atlasUsageLogTableBody: document.getElementById("atlasUsageLogTableBody"),
+  atlasUsageLogPagination: document.getElementById("atlasUsageLogPagination"),
+  atlasUsageLogPaginationMeta: document.getElementById("atlasUsageLogPaginationMeta"),
+  atlasUsageLogPrevBtn: document.getElementById("atlasUsageLogPrevBtn"),
+  atlasUsageLogNextBtn: document.getElementById("atlasUsageLogNextBtn"),
   linkModal: document.getElementById("linkModal"),
   linkModalBackdrop: document.getElementById("linkModalBackdrop"),
   linkModalTitle: document.getElementById("linkModalTitle"),
@@ -120,6 +126,9 @@ let atlasLoading = false;
 let atlasView = "login";
 let atlasSession = null;
 let atlasAutoLoginAttempted = false;
+let atlasUsageLogs = [];
+let atlasUsageLogPage = 1;
+let atlasUsageLogTotalPages = 1;
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -220,6 +229,7 @@ function setAtlasButtonLoading(loading) {
   els.atlasRefreshBtn.classList.toggle("is-loading", atlasLoading && atlasView === "dashboard");
   els.atlasLoginLabel.textContent = atlasLoading && atlasView === "login" ? "登录中..." : "登录";
   els.atlasRefreshLabel.textContent = atlasLoading && atlasView === "dashboard" ? "刷新中..." : "刷新数据";
+  syncAtlasUsageLogPagination({ forceShow: atlasUsageLogs.length > 0 });
 }
 
 function getStationTwoPreferencePayload({ passwordOverride } = {}) {
@@ -277,6 +287,10 @@ function distributionSkeletonMarkup(index) {
 
 function stationTwoUsageSkeletonRowMarkup(index) {
   return `<div class="table-grid table-grid--yescode table-row table-row--yescode" role="row" style="--delay:${index * 40}ms;animation:none;opacity:1;transform:none;"><div class="row-time skeleton" role="cell">03-16 22:25:31</div><div class="row-key skeleton" role="cell">codex</div><div role="cell"><span class="row-model skeleton">gpt-5.4-xhigh</span></div><div class="row-cost skeleton" role="cell">$0.04</div></div>`;
+}
+
+function atlasUsageLogSkeletonRowMarkup(index) {
+  return `<div class="table-grid table-grid--atlas-log table-row table-row--atlas-log" role="row" style="--delay:${index * 40}ms;animation:none;opacity:1;transform:none;"><div class="row-time skeleton" role="cell">03-17 12:12:12</div><div class="row-key skeleton" role="cell">codex</div><div role="cell"><span class="atlas-log-type atlas-log-type--neutral skeleton">消费</span></div><div role="cell"><span class="row-model skeleton">gpt-5.4</span></div><div class="row-cost skeleton" role="cell">$0.02</div><div class="row-detail skeleton" role="cell">接口 /v1/responses</div></div>`;
 }
 
 function renderDistributionInto(node, items, { emptyTitle, emptyText } = {}) {
@@ -562,6 +576,77 @@ function renderStationTwoUsageLoadingState({ keepPagination = false } = {}) {
   }
   els.stationTwoUsageTableBody.innerHTML = [0, 1, 2, 3].map(stationTwoUsageSkeletonRowMarkup).join("");
   syncStationTwoUsagePagination(stationTwoUsageTotalItems, { forceShow: keepPagination || stationTwoUsageTotalItems > 0 });
+}
+
+function getAtlasUsageLogTypeClass(typeKey) {
+  if (typeKey === "error") return "error";
+  if (typeKey === "consume") return "consume";
+  return "neutral";
+}
+
+function syncAtlasUsageLogPagination({ forceShow = false } = {}) {
+  if (!els.atlasUsageLogPagination || !els.atlasUsageLogPaginationMeta || !els.atlasUsageLogPrevBtn || !els.atlasUsageLogNextBtn) {
+    return;
+  }
+
+  const total = Array.isArray(atlasUsageLogs) ? atlasUsageLogs.length : 0;
+  atlasUsageLogTotalPages = Math.max(1, Math.ceil(total / ATLAS_USAGE_LOG_PAGE_SIZE));
+  atlasUsageLogPage = Math.min(Math.max(1, atlasUsageLogPage), atlasUsageLogTotalPages);
+  const shouldShow = forceShow || total > 0;
+  els.atlasUsageLogPagination.hidden = !shouldShow;
+
+  if (!shouldShow) {
+    els.atlasUsageLogPaginationMeta.textContent = "";
+    els.atlasUsageLogPrevBtn.disabled = true;
+    els.atlasUsageLogNextBtn.disabled = true;
+    return;
+  }
+
+  els.atlasUsageLogPaginationMeta.textContent = atlasLoading
+    ? `正在加载第 ${atlasUsageLogPage} 页...`
+    : `第 ${fmtCount(atlasUsageLogPage)} / ${fmtCount(atlasUsageLogTotalPages)} 页 · 共 ${fmtCount(total)} 条`;
+  els.atlasUsageLogPrevBtn.disabled = atlasLoading || atlasUsageLogPage <= 1;
+  els.atlasUsageLogNextBtn.disabled = atlasLoading || atlasUsageLogPage >= atlasUsageLogTotalPages;
+}
+
+function renderAtlasUsageLogTable() {
+  if (!els.atlasUsageLogTableBody) return;
+
+  const logs = Array.isArray(atlasUsageLogs) ? atlasUsageLogs : [];
+  if (!logs.length) {
+    els.atlasUsageLogTableBody.innerHTML = emptyStateMarkup("今日暂无日志", "今天还没有可展示的 998Code 使用日志。");
+    syncAtlasUsageLogPagination();
+    return;
+  }
+
+  atlasUsageLogTotalPages = Math.max(1, Math.ceil(logs.length / ATLAS_USAGE_LOG_PAGE_SIZE));
+  atlasUsageLogPage = Math.min(Math.max(1, atlasUsageLogPage), atlasUsageLogTotalPages);
+  const startIndex = (atlasUsageLogPage - 1) * ATLAS_USAGE_LOG_PAGE_SIZE;
+  const pageItems = logs.slice(startIndex, startIndex + ATLAS_USAGE_LOG_PAGE_SIZE);
+
+  if (!pageItems.length) {
+    els.atlasUsageLogTableBody.innerHTML = emptyStateMarkup("当前页暂无日志", "返回上一页或刷新数据后再试。");
+    syncAtlasUsageLogPagination({ forceShow: true });
+    return;
+  }
+
+  els.atlasUsageLogTableBody.innerHTML = pageItems.map((item, index) => `
+    <div class="table-grid table-grid--atlas-log table-row table-row--atlas-log" role="row" style="--delay:${index * 42}ms">
+      <div class="row-time" role="cell">${esc(fmtDate(item.createdAt))}</div>
+      <div class="row-key" role="cell">${esc(item.tokenName || "未命名令牌")}</div>
+      <div role="cell"><span class="atlas-log-type atlas-log-type--${esc(getAtlasUsageLogTypeClass(item.typeKey))}">${esc(item.typeLabel || "其他")}</span></div>
+      <div role="cell"><span class="row-model">${esc(item.model || "—")}</span></div>
+      <div class="row-cost" role="cell">${esc(fmtMoney(item.costUsd))}</div>
+      <div class="row-detail" role="cell">${esc(item.detail || item.requestId || "—")}</div>
+    </div>
+  `).join("");
+  syncAtlasUsageLogPagination({ forceShow: true });
+}
+
+function renderAtlasUsageLogLoadingState({ keepPagination = false } = {}) {
+  if (!els.atlasUsageLogTableBody) return;
+  els.atlasUsageLogTableBody.innerHTML = [0, 1, 2].map(atlasUsageLogSkeletonRowMarkup).join("");
+  syncAtlasUsageLogPagination({ forceShow: keepPagination || atlasUsageLogs.length > 0 });
 }
 
 function renderIdleState() {
@@ -890,9 +975,13 @@ function renderAtlasIdleState() {
   if (!atlasHasSnapshot) {
     setAtlasSummaryValues({ balanceUsd: null, usedUsd: null, requestCount: null });
     renderAtlasSubscriptions([]);
+    atlasUsageLogs = [];
+    atlasUsageLogPage = 1;
+    renderAtlasUsageLogTable();
     setAtlasView("login");
   } else {
     setAtlasView("dashboard");
+    renderAtlasUsageLogTable();
   }
   syncAtlasSessionChrome({
     username: els.atlasUsernameInput.value.trim() || atlasSession?.username || "",
@@ -933,6 +1022,7 @@ function renderAtlasLoadingState() {
       </div>
     </article>
   `).join("");
+  renderAtlasUsageLogLoadingState({ keepPagination: atlasUsageLogs.length > 0 });
   syncAtlasSessionChrome({
     username: els.atlasUsernameInput.value.trim() || atlasSession?.username || "",
     displayName: atlasSession?.displayName || ""
@@ -943,12 +1033,15 @@ function renderAtlasData(data) {
   const summary = data?.summary || {};
   atlasSession = data?.session || {};
   atlasHasSnapshot = true;
+  atlasUsageLogs = Array.isArray(data?.dailyLogs) ? data.dailyLogs : [];
+  atlasUsageLogPage = 1;
   setAtlasSummaryValues({
     balanceUsd: summary.balanceUsd,
     usedUsd: summary.usedUsd,
     requestCount: summary.requestCount
   });
   renderAtlasSubscriptions(data?.subscriptions);
+  renderAtlasUsageLogTable();
   syncAtlasSessionChrome({
     username: summary.username || atlasSession?.username || "",
     displayName: summary.displayName || atlasSession?.displayName || ""
@@ -960,6 +1053,9 @@ function renderAtlasError(message) {
   if (!atlasHasSnapshot) {
     setAtlasSummaryValues({ balanceUsd: null, usedUsd: null, requestCount: null });
     renderAtlasSubscriptions([]);
+    atlasUsageLogs = [];
+    atlasUsageLogPage = 1;
+    renderAtlasUsageLogTable();
   }
   setAtlasMessage(message, "error");
 }
@@ -1132,7 +1228,7 @@ async function refreshAtlasDashboard() {
     const data = await window.api.fetchStationThreeDashboard({
       username: els.atlasUsernameInput.value.trim(),
       password: els.atlasPasswordInput.value,
-      allowLogin: Boolean(els.atlasPasswordInput.value)
+      allowLogin: true
     });
     renderAtlasData(data);
     setAtlasMessage("998Code 数据已更新", "success");
@@ -1335,6 +1431,18 @@ els.stationTwoUsagePrevBtn?.addEventListener("click", () => {
 els.stationTwoUsageNextBtn?.addEventListener("click", () => {
   if (els.stationTwoUsageNextBtn.disabled) return;
   void refreshStationTwoUsagePage(stationTwoUsagePage + 1);
+});
+
+els.atlasUsageLogPrevBtn?.addEventListener("click", () => {
+  if (els.atlasUsageLogPrevBtn.disabled) return;
+  atlasUsageLogPage = Math.max(1, atlasUsageLogPage - 1);
+  renderAtlasUsageLogTable();
+});
+
+els.atlasUsageLogNextBtn?.addEventListener("click", () => {
+  if (els.atlasUsageLogNextBtn.disabled) return;
+  atlasUsageLogPage = Math.min(atlasUsageLogTotalPages, atlasUsageLogPage + 1);
+  renderAtlasUsageLogTable();
 });
 
 els.refreshBtn.addEventListener("click", refresh);

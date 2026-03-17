@@ -16,9 +16,11 @@ const STATION_TWO_KEYS_URL = `${STATION_TWO_BASE_URL}/api/v1/keys`;
 const STATION_THREE_BASE_URL = "https://9985678.xyz";
 const STATION_THREE_LOGIN_URL = `${STATION_THREE_BASE_URL}/api/user/login?turnstile=`;
 const STATION_THREE_SELF_URL = `${STATION_THREE_BASE_URL}/api/user/self`;
+const STATION_THREE_USER_TOKEN_URL = `${STATION_THREE_BASE_URL}/api/user/token`;
 const STATION_THREE_STATUS_URL = `${STATION_THREE_BASE_URL}/api/status`;
 const STATION_THREE_SUBSCRIPTION_SELF_URL = `${STATION_THREE_BASE_URL}/api/subscription/self`;
 const STATION_THREE_SUBSCRIPTION_PLANS_URL = `${STATION_THREE_BASE_URL}/api/subscription/plans`;
+const STATION_THREE_LOG_SELF_URL = `${STATION_THREE_BASE_URL}/api/log/self/`;
 const STATION_TWO_SESSION_PARTITION = "persist:key-dashboard-station-two";
 const STATION_THREE_SESSION_PARTITION = "persist:key-dashboard-station-three";
 const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
@@ -28,6 +30,8 @@ const STATION_TWO_TIMEOUT_MS = 20000;
 const STATION_TWO_USAGE_PAGE_SIZE = 10;
 const STATION_THREE_TIMEOUT_MS = 20000;
 const STATION_THREE_DEFAULT_QUOTA_PER_UNIT = 500000;
+const STATION_THREE_LOG_FETCH_PAGE_SIZE = 100;
+const STATION_THREE_LOG_FETCH_MAX_PAGES = 30;
 const TOKEN_REFRESH_BUFFER_MS = 120000;
 // Hot-update entry (disabled for manual update workflow):
 // const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
@@ -59,6 +63,7 @@ const stationThreeState = {
   password: "",
   userId: "",
   sessionCookie: "",
+  accessToken: "",
   displayName: "",
   group: "",
   quotaPerUnit: STATION_THREE_DEFAULT_QUOTA_PER_UNIT
@@ -521,6 +526,7 @@ function setStationThreeCredentials({
   password,
   userId,
   sessionCookie,
+  accessToken,
   displayName,
   group,
   quotaPerUnit
@@ -541,6 +547,10 @@ function setStationThreeCredentials({
     stationThreeState.sessionCookie = sessionCookie.trim();
   }
 
+  if (typeof accessToken === "string") {
+    stationThreeState.accessToken = accessToken.trim();
+  }
+
   if (typeof displayName === "string" && displayName.trim()) {
     stationThreeState.displayName = displayName.trim();
   }
@@ -558,6 +568,7 @@ function setStationThreeCredentials({
 function clearStationThreeSession({ clearCredentials = false } = {}) {
   stationThreeState.userId = "";
   stationThreeState.sessionCookie = "";
+  stationThreeState.accessToken = "";
   stationThreeState.displayName = "";
   stationThreeState.group = "";
   stationThreeState.quotaPerUnit = STATION_THREE_DEFAULT_QUOTA_PER_UNIT;
@@ -589,6 +600,46 @@ function getDateStringInTimeZone(date = new Date(), timeZone = "UTC") {
   const day = parts.find((part) => part.type === "day")?.value || "01";
 
   return `${year}-${month}-${day}`;
+}
+
+function getLocalDayBoundsUnix(date = new Date()) {
+  const startDate = new Date(date);
+  startDate.setHours(0, 0, 0, 0);
+  const start = Math.floor(startDate.getTime() / 1000);
+  return {
+    start,
+    end: start + 86400
+  };
+}
+
+function normalizeUnixSeconds(value) {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value > 1e12) return Math.floor(value / 1000);
+    if (value > 1e9) return Math.floor(value);
+    return 0;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  if (/^\d+$/.test(raw)) {
+    const numeric = Number.parseInt(raw, 10);
+    if (!Number.isFinite(numeric)) return 0;
+    if (numeric > 1e12) return Math.floor(numeric / 1000);
+    if (numeric > 1e9) return Math.floor(numeric);
+    return 0;
+  }
+
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = Date.parse(normalized);
+  if (Number.isFinite(parsed)) {
+    return Math.floor(parsed / 1000);
+  }
+
+  const fallbackParsed = Date.parse(raw.replace(/-/g, "/"));
+  return Number.isFinite(fallbackParsed) ? Math.floor(fallbackParsed / 1000) : 0;
 }
 
 function normalizeQuotaPerUnit(value) {
@@ -920,6 +971,101 @@ function summarizeStationThreeUser(user, quotaPerUnit) {
   };
 }
 
+function parseStationThreeOtherPayload(other) {
+  if (!other || typeof other !== "string") return null;
+  const raw = other.trim();
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeStationThreeLogType(rawType, quota) {
+  const numericType = Number(rawType);
+  if (numericType === 5) {
+    return {
+      typeCode: 5,
+      typeKey: "error",
+      typeLabel: "错误"
+    };
+  }
+
+  if (numericType === 2 || Number(quota) > 0) {
+    return {
+      typeCode: Number.isFinite(numericType) ? numericType : 2,
+      typeKey: "consume",
+      typeLabel: "消费"
+    };
+  }
+
+  return {
+    typeCode: Number.isFinite(numericType) ? numericType : null,
+    typeKey: "other",
+    typeLabel: "其他"
+  };
+}
+
+function buildStationThreeLogDetail(item, parsedOther) {
+  const content = String(item?.content || "").trim();
+  if (content) return content;
+
+  const detailSegments = [];
+  const requestPath = String(parsedOther?.request_path || "").trim();
+  const errorType = String(parsedOther?.error_type || "").trim();
+  const errorCode = String(parsedOther?.error_code || "").trim();
+  const statusCode = Number(parsedOther?.status_code);
+  const reasoningEffort = String(parsedOther?.reasoning_effort || "").trim();
+
+  if (requestPath) detailSegments.push(`接口 ${requestPath}`);
+  if (reasoningEffort) detailSegments.push(`推理 ${reasoningEffort}`);
+  if (errorType || errorCode) {
+    detailSegments.push([errorType, errorCode].filter(Boolean).join("/"));
+  }
+  if (Number.isFinite(statusCode) && statusCode > 0) {
+    detailSegments.push(`状态 ${statusCode}`);
+  }
+
+  const requestId = String(item?.request_id || "").trim();
+  if (!detailSegments.length && requestId) {
+    return `request_id=${requestId}`;
+  }
+
+  return detailSegments.join(" · ");
+}
+
+function normalizeStationThreeLogRecord(item, quotaPerUnit) {
+  const createdAtUnix = normalizeUnixSeconds(item?.created_at ?? item?.createdAt ?? item?.created_at_unix);
+  if (!Number.isFinite(createdAtUnix) || createdAtUnix <= 0) {
+    return null;
+  }
+
+  const quota = Number(item?.quota);
+  const typeInfo = normalizeStationThreeLogType(item?.type, quota);
+  const parsedOther = parseStationThreeOtherPayload(item?.other);
+  const detail = buildStationThreeLogDetail(item, parsedOther);
+  const costUsd = typeInfo.typeKey === "consume" && Number.isFinite(quota)
+    ? quotaToUsd(quota, quotaPerUnit)
+    : null;
+
+  return {
+    id: item?.id ?? null,
+    createdAt: createdAtUnix * 1000,
+    createdAtUnix,
+    tokenName: String(item?.token_name || "").trim() || "未命名令牌",
+    typeCode: typeInfo.typeCode,
+    typeKey: typeInfo.typeKey,
+    typeLabel: typeInfo.typeLabel,
+    model: String(item?.model_name || "").trim() || "—",
+    costUsd,
+    detail,
+    requestId: String(item?.request_id || "").trim() || ""
+  };
+}
+
 function unwrapStationTwoPayload(bodyText) {
   let parsed;
 
@@ -1006,10 +1152,6 @@ function requestStationThree(url, { method = "GET", headers = {}, body = "" } = 
       request.setHeader("Accept", "application/json, text/plain, */*");
       request.setHeader("Accept-Encoding", "identity");
       request.setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Electron");
-
-      if (!headers.Cookie && !headers.cookie && stationThreeState.sessionCookie) {
-        request.setHeader("Cookie", stationThreeState.sessionCookie);
-      }
 
       Object.entries(headers).forEach(([key, value]) => {
         if (value === undefined || value === null || value === "") return;
@@ -1121,6 +1263,12 @@ function toStationThreeUserFacingError(error) {
   }
 
   return new Error(message);
+}
+
+function isStationThreeAuthError(error) {
+  const statusCode = Number(error && error.statusCode ? error.statusCode : 0);
+  const message = error && error.message ? String(error.message) : "";
+  return statusCode === 401 || statusCode === 403 || /^HTTP 401\b|^HTTP 403\b/i.test(message);
 }
 
 function requestStationTwo(url, { method = "GET", headers = {}, body = "", proxyUrl = stationTwoState.proxyUrl } = {}) {
@@ -1820,16 +1968,46 @@ async function loginStationThree({ username, password } = {}) {
   return payload;
 }
 
-function buildStationThreeUserHeaders(userId) {
+function buildStationThreeUserHeaders(
+  userId,
+  {
+    requireUserId = false,
+    requireAccessToken = false
+  } = {}
+) {
   const resolvedUserId = String(userId || stationThreeState.userId || "").trim();
-  if (!resolvedUserId) {
+  const resolvedAccessToken = String(stationThreeState.accessToken || "").trim();
+  const resolvedSessionCookie = String(stationThreeState.sessionCookie || "").trim();
+
+  if (requireUserId && !resolvedUserId) {
     throw buildStationThreeAuthRequiredError();
   }
 
-  return {
-    "New-Api-User": resolvedUserId,
+  if (requireAccessToken && !resolvedAccessToken) {
+    throw buildStationThreeAuthRequiredError();
+  }
+
+  if (!resolvedUserId && !resolvedAccessToken && !resolvedSessionCookie) {
+    throw buildStationThreeAuthRequiredError();
+  }
+
+  const headers = {
     Referer: `${STATION_THREE_BASE_URL}/`
   };
+
+  if (resolvedUserId) {
+    headers["New-Api-User"] = resolvedUserId;
+  }
+
+  if (resolvedAccessToken) {
+    headers.Authorization = `Bearer ${resolvedAccessToken}`;
+  }
+
+  if (resolvedSessionCookie) {
+    headers.Cookie = resolvedSessionCookie;
+  }
+
+  return headers;
 }
 
 async function ensureStationThreeSession({
@@ -1844,7 +2022,8 @@ async function ensureStationThreeSession({
     return stationThreeState.userId;
   }
 
-  if (!allowLogin) {
+  const hasCachedCredentials = Boolean(stationThreeState.username && stationThreeState.password);
+  if (!allowLogin && !hasCachedCredentials) {
     throw buildStationThreeAuthRequiredError();
   }
 
@@ -1876,6 +2055,21 @@ async function fetchStationThreeSelf(userId) {
   return unwrapStationThreePayload(bodyText);
 }
 
+async function fetchStationThreeAccessToken(userId, { forceRefresh = false } = {}) {
+  const cachedToken = String(stationThreeState.accessToken || "").trim();
+  if (cachedToken && !forceRefresh) {
+    return cachedToken;
+  }
+
+  const { bodyText } = await requestStationThree(STATION_THREE_USER_TOKEN_URL, {
+    method: "GET",
+    headers: buildStationThreeUserHeaders(userId, { requireUserId: true })
+  });
+
+  const payload = unwrapStationThreePayload(bodyText);
+  return String(payload || "").trim();
+}
+
 async function fetchStationThreeSubscriptionSelf(userId) {
   const { bodyText } = await requestStationThree(STATION_THREE_SUBSCRIPTION_SELF_URL, {
     method: "GET",
@@ -1892,6 +2086,139 @@ async function fetchStationThreeSubscriptionPlans(userId) {
   });
 
   return unwrapStationThreePayload(bodyText);
+}
+
+async function fetchStationThreeLogSelfPage(userId, { page = 1, pageSize = STATION_THREE_LOG_FETCH_PAGE_SIZE } = {}) {
+  const resolvedPage = normalizePositiveInt(page, 1);
+  const resolvedPageSize = normalizePositiveInt(pageSize, STATION_THREE_LOG_FETCH_PAGE_SIZE);
+  const requestUrl = `${STATION_THREE_LOG_SELF_URL}?p=${resolvedPage}&size=${resolvedPageSize}`;
+  const buildHeaders = () => {
+    const headers = buildStationThreeUserHeaders(userId);
+    if (stationThreeState.accessToken) {
+      headers.Authorization = `Bearer ${stationThreeState.accessToken}`;
+    }
+    return headers;
+  };
+
+  const requestOnce = async () => {
+    const { bodyText } = await requestStationThree(requestUrl, {
+      method: "GET",
+      headers: buildHeaders()
+    });
+    return unwrapStationThreePayload(bodyText);
+  };
+
+  let payload;
+  try {
+    payload = await requestOnce();
+  } catch (error) {
+    if (!stationThreeState.accessToken && isStationThreeAuthError(error)) {
+      const fetchedToken = await fetchStationThreeAccessToken(userId, { forceRefresh: true }).catch(() => "");
+      if (fetchedToken) {
+        setStationThreeCredentials({ accessToken: fetchedToken });
+        payload = await requestOnce();
+      } else {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const total = normalizeNonNegativeInt(payload?.total, items.length);
+  const totalPages = Math.max(1, Math.ceil(total / resolvedPageSize));
+
+  return {
+    items,
+    page: normalizePositiveInt(payload?.page, resolvedPage),
+    pageSize: normalizePositiveInt(payload?.page_size, resolvedPageSize),
+    total,
+    totalPages
+  };
+}
+
+async function fetchStationThreeDailyLogs(userId, quotaPerUnit) {
+  const normalizedQuotaPerUnit = normalizeQuotaPerUnit(quotaPerUnit);
+  const dayBounds = getLocalDayBoundsUnix(new Date());
+  let currentUserId = String(userId || "").trim();
+  const logs = [];
+
+  for (let page = 1; page <= STATION_THREE_LOG_FETCH_MAX_PAGES; page += 1) {
+    let pageData = null;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        pageData = await fetchStationThreeLogSelfPage(currentUserId || userId, {
+          page,
+          pageSize: STATION_THREE_LOG_FETCH_PAGE_SIZE
+        });
+        break;
+      } catch (error) {
+        if (
+          attempt === 1
+          && isStationThreeAuthError(error)
+          && stationThreeState.username
+          && stationThreeState.password
+        ) {
+          try {
+            const payload = await loginStationThree({
+              username: stationThreeState.username,
+              password: stationThreeState.password
+            });
+            currentUserId = String(payload?.id || currentUserId || userId || "").trim();
+            continue;
+          } catch {
+            // Fall through to partial-return logic below.
+          }
+        }
+
+        if (logs.length) {
+          console.warn(
+            `998Code logs fetch interrupted at page ${page}, returning partial daily logs:`,
+            error && error.message ? error.message : error
+          );
+          return logs.sort((left, right) => right.createdAtUnix - left.createdAtUnix);
+        }
+
+        throw error;
+      }
+    }
+
+    if (!pageData) {
+      break;
+    }
+
+    const pageItems = Array.isArray(pageData.items) ? pageData.items : [];
+    if (!pageItems.length) break;
+
+    let reachedOlderDay = false;
+
+    for (const item of pageItems) {
+      const createdAtUnix = normalizeUnixSeconds(item?.created_at ?? item?.createdAt ?? item?.created_at_unix);
+      if (!Number.isFinite(createdAtUnix) || createdAtUnix <= 0) continue;
+
+      if (createdAtUnix >= dayBounds.end) {
+        continue;
+      }
+
+      if (createdAtUnix < dayBounds.start) {
+        reachedOlderDay = true;
+        continue;
+      }
+
+      const normalized = normalizeStationThreeLogRecord(item, normalizedQuotaPerUnit);
+      if (normalized) {
+        logs.push(normalized);
+      }
+    }
+
+    if (reachedOlderDay || page >= pageData.totalPages) {
+      break;
+    }
+  }
+
+  return logs.sort((left, right) => right.createdAtUnix - left.createdAtUnix);
 }
 
 function buildStationThreeSessionSnapshot(summary) {
@@ -1913,16 +2240,31 @@ async function fetchStationThreeDashboard({
   setStationThreeCredentials({ username, password });
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    let failedStep = "initialize";
     try {
+      failedStep = "ensureSession";
       const userId = await ensureStationThreeSession({
         username: stationThreeState.username,
         password: stationThreeState.password,
         allowLogin,
         forceLogin
       });
-      const [user, subscriptionSelf, statusResult, plansResult] = await Promise.all([
-        fetchStationThreeSelf(userId),
-        fetchStationThreeSubscriptionSelf(userId),
+      // Give Electron cookie storage a brief window to settle after login.
+      await sleep(120);
+
+      failedStep = "accessToken";
+      const accessToken = await fetchStationThreeAccessToken(userId, { forceRefresh: true }).catch(() => "");
+      if (accessToken) {
+        setStationThreeCredentials({ accessToken });
+      }
+
+      // Fetch critical authenticated resources sequentially to reduce auth race.
+      failedStep = "self";
+      const user = await fetchStationThreeSelf(userId);
+      failedStep = "subscriptionSelf";
+      const subscriptionSelf = await fetchStationThreeSubscriptionSelf(userId);
+      failedStep = "statusAndPlans";
+      const [statusResult, plansResult] = await Promise.all([
         fetchStationThreeStatus().catch(() => null),
         fetchStationThreeSubscriptionPlans(userId).catch(() => [])
       ]);
@@ -1931,22 +2273,37 @@ async function fetchStationThreeDashboard({
       const plansById = normalizeStationThreePlans(plansResult);
       const summary = summarizeStationThreeUser(user, quotaPerUnit);
       const subscriptions = normalizeStationThreeSubscriptions(subscriptionSelf?.subscriptions, plansById, quotaPerUnit);
+      const resolvedAccessToken = accessToken || stationThreeState.accessToken || "";
+      failedStep = "dailyLogs";
+      const dailyLogs = await fetchStationThreeDailyLogs(userId, quotaPerUnit).catch((error) => {
+        console.warn("Failed to fetch 998Code daily logs:", error && error.message ? error.message : error);
+        return [];
+      });
 
+      failedStep = "persistSession";
       setStationThreeCredentials({
         userId,
         username: summary.username,
         displayName: summary.displayName,
         group: summary.group,
-        quotaPerUnit
+        quotaPerUnit,
+        accessToken: resolvedAccessToken
       });
 
       return {
         summary,
         subscriptions,
+        dailyLogs,
         billingPreference: String(subscriptionSelf?.billing_preference || "").trim() || "",
         session: buildStationThreeSessionSnapshot(summary)
       };
     } catch (error) {
+      console.warn("fetchStationThreeDashboard failed:", {
+        step: failedStep,
+        statusCode: Number(error && error.statusCode ? error.statusCode : 0),
+        code: error && error.code ? String(error.code) : "",
+        message: error && error.message ? String(error.message) : "unknown"
+      });
       const statusCode = Number(error && error.statusCode ? error.statusCode : 0);
       if ((statusCode === 401 || statusCode === 403) && attempt === 1) {
         clearStationThreeSession();

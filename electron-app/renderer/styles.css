@@ -2296,6 +2296,16 @@ body.modal-open {
   grid-template-columns: minmax(160px, 1.15fr) minmax(120px, 0.95fr) minmax(180px, 1.1fr) minmax(90px, 0.7fr);
 }
 
+.table-grid--atlas-log {
+  grid-template-columns:
+    minmax(154px, 1fr)
+    minmax(92px, 0.72fr)
+    minmax(80px, 0.62fr)
+    minmax(120px, 0.9fr)
+    minmax(88px, 0.62fr)
+    minmax(220px, 1.5fr);
+}
+
 .table-grid--head {
   padding: 16px 0;
   margin-top: 18px;
@@ -2325,6 +2335,16 @@ body.modal-open {
 
 .table-grid--yescode.table-grid--head span:nth-child(3),
 .table-row--yescode > :nth-child(3) {
+  text-align: left;
+}
+
+.table-grid--atlas-log.table-grid--head span:nth-child(5),
+.table-row--atlas-log > :nth-child(5) {
+  text-align: right;
+}
+
+.table-grid--atlas-log.table-grid--head span:nth-child(6),
+.table-row--atlas-log > :nth-child(6) {
   text-align: left;
 }
 
@@ -2472,6 +2492,45 @@ body.modal-open {
 .row-cost {
   color: var(--amber);
   font-weight: 800;
+}
+
+.row-detail {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.atlas-log-type {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(153, 177, 214, 0.2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.atlas-log-type--consume {
+  border-color: rgba(58, 213, 200, 0.34);
+  background: rgba(58, 213, 200, 0.16);
+  color: #b9fff1;
+}
+
+.atlas-log-type--error {
+  border-color: rgba(255, 120, 144, 0.34);
+  background: rgba(255, 120, 144, 0.16);
+  color: #ffd4dd;
+}
+
+.atlas-log-type--neutral {
+  border-color: rgba(153, 177, 214, 0.28);
+  background: rgba(153, 177, 214, 0.12);
+  color: #d4deef;
 }
 
 .empty-state {
@@ -2725,6 +2784,16 @@ body.ready .reveal {
     grid-template-columns: minmax(128px, 1.1fr) minmax(96px, 0.9fr) minmax(160px, 1fr) minmax(88px, 0.7fr);
   }
 
+  .table-grid--atlas-log {
+    grid-template-columns:
+      minmax(118px, 0.92fr)
+      minmax(90px, 0.75fr)
+      minmax(74px, 0.62fr)
+      minmax(118px, 0.92fr)
+      minmax(82px, 0.62fr)
+      minmax(156px, 1.12fr);
+  }
+
   .table-grid--head span:nth-child(3),
   .table-row .row-requests {
     display: none;
@@ -2734,9 +2803,18 @@ body.ready .reveal {
     display: block;
   }
 
+  .table-grid--atlas-log.table-grid--head span:nth-child(3) {
+    display: block;
+  }
+
   .table-grid--head span:last-child,
   .table-row .row-cost {
     text-align: right;
+  }
+
+  .table-grid--atlas-log.table-grid--head span:nth-child(6),
+  .table-row--atlas-log > :nth-child(6) {
+    text-align: left;
   }
 
   .table-pagination {
