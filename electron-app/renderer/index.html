@@ -156,24 +156,7 @@
               </div>
             </label>
 
-            <div id="stationTwoAdvancedSettings" class="advanced-settings">
-              <button id="stationTwoAdvancedToggle" class="advanced-settings-summary" type="button" aria-expanded="false" aria-controls="stationTwoAdvancedContent">
-                <span class="advanced-settings-label">高级设置</span>
-                <span class="advanced-settings-hint">需要代理时再展开</span>
-              </button>
-
-              <div id="stationTwoAdvancedContent" class="advanced-settings-content">
-                <div class="advanced-settings-body">
-                  <label class="stacked-field" for="stationTwoProxyInput">
-                    <span class="field-label">代理</span>
-                    <div class="input-shell">
-                      <span class="input-icon input-icon--proxy" aria-hidden="true"></span>
-                      <input id="stationTwoProxyInput" type="text" placeholder="http://127.0.0.1:7890，可留空直连" autocomplete="off" spellcheck="false">
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
+            <input id="stationTwoProxyInput" type="hidden" value="http://127.0.0.1:7890">
 
             <div class="station-two-auth-options" aria-label="登录偏好">
               <label class="station-two-option-chip" for="stationTwoRememberToggle">

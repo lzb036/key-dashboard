@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sub2API - AI API Gateway</title>
+    <script type="module" crossorigin src="/assets/index-ClF0bJD1.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-vue-B7BZKRFG.js">
+    <link rel="stylesheet" crossorigin href="/assets/vendor-vue-DB0Q8XAf.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-Bi820vvM.css">
+  <script nonce="7C1B2zRYgpTVasW+V7p7Ow==">window.__APP_CONFIG__={"registration_enabled":true,"email_verify_enabled":true,"promo_code_enabled":true,"password_reset_enabled":false,"totp_enabled":false,"turnstile_enabled":false,"site_name":"Codex","site_subtitle":"Subscription to API Conversion Platform","contact_info":"微信：AiCoderKevin","customer_service_qr":"/uploads/871330f02522e02c7778878f0f9a4d13.png","after_sales_group_qr":"/uploads/244b13e90cbe49a9417951e96fbcdeb5.png","doc_markdown":"# Sub2API 使用教程\n\n## 1. 登录与首页\n- 访问站点首页，点击右上角登录或注册。\n- 登录后进入仪表盘查看余额、用量与快捷入口。\n\n## 2. 获取 API Key\n- 进入 API Keys 页面。\n- 点击创建密钥，系统会生成新的 API Key。\n- 复制并妥善保存，避免泄露。\n\n## 3. 调用方式\n- API Base URL 以页面显示为准（如已配置）。\n- 在请求中携带 Authorization 头。\n\n    POST /v1/messages\n    Authorization: Bearer YOUR_API_KEY\n    Content-Type: application/json\n\n## 4. 套餐与购买\n- 进入套餐页面查看可用分组与套餐。\n- 点击购买并扫码完成支付（如管理员已配置二维码）。\n- 购买后额度会自动发放到账号。\n\n## 5. 余额与配额\n- 仪表盘展示当前余额与并发限制等信息。\n- 套餐包含每日额度和总额度，超出后请求将受限。\n\n## 6. 使用记录\n- 进入使用记录查看请求和消耗明细。\n- 可按时间范围筛选。\n\n## 7. 常见问题\n- 401 Unauthorized：API Key 无效或已禁用。\n- 403 Forbidden：账号无权限或分组不可用。\n- 429 Too Many Requests：并发或速率超限。\n- 402 Payment Required：余额或配额不足。\n\n如需帮助，请联系站点客服。","hide_ccs_import_button":false,"registration_email_suffix_whitelist":[],"purchase_subscription_enabled":false,"sora_client_enabled":false,"custom_menu_items":[],"linuxdo_oauth_enabled":false};</script></head>
+  <body>
+    <div id="app"></div>
+  <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" nonce="7C1B2zRYgpTVasW+V7p7Ow==" data-cf-beacon='{"version":"2024.11.0","token":"e779629a9a734843a898c54a259c9395","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>

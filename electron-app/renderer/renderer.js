@@ -52,8 +52,6 @@ const els = {
   stationTwoUsageNextBtn: document.getElementById("stationTwoUsageNextBtn"),
   stationTwoEmailInput: document.getElementById("stationTwoEmailInput"),
   stationTwoPasswordInput: document.getElementById("stationTwoPasswordInput"),
-  stationTwoAdvancedSettings: document.getElementById("stationTwoAdvancedSettings"),
-  stationTwoAdvancedToggle: document.getElementById("stationTwoAdvancedToggle"),
   stationTwoProxyInput: document.getElementById("stationTwoProxyInput"),
   stationTwoRememberToggle: document.getElementById("stationTwoRememberToggle"),
   stationTwoAutoLoginToggle: document.getElementById("stationTwoAutoLoginToggle"),
@@ -675,12 +673,6 @@ function syncStationTwoPreferenceState() {
   );
 }
 
-function setStationTwoAdvancedSettingsOpen(open) {
-  const isOpen = Boolean(open);
-  els.stationTwoAdvancedSettings.classList.toggle("is-open", isOpen);
-  els.stationTwoAdvancedToggle.setAttribute("aria-expanded", String(isOpen));
-}
-
 function syncStationTwoSessionChrome({ email } = {}) {
   const resolvedEmail = String(email || els.stationTwoEmailInput.value || "").trim();
   els.stationTwoEmailReadout.textContent = resolvedEmail || "未填写";
@@ -1212,11 +1204,6 @@ els.atlasToggleBtn.addEventListener("click", () => {
   announce(els.atlasPasswordInput.type === "text" ? "已显示 998Code 密码" : "已隐藏 998Code 密码");
 });
 
-els.stationTwoAdvancedToggle.addEventListener("click", () => {
-  const willOpen = !els.stationTwoAdvancedSettings.classList.contains("is-open");
-  setStationTwoAdvancedSettingsOpen(willOpen);
-});
-
 els.stationTwoRememberToggle.addEventListener("change", async () => {
   if (!els.stationTwoRememberToggle.checked) {
     stationTwoAutoLoginAttempted = false;
@@ -1323,7 +1310,6 @@ if (savedSource && SOURCE_CONFIG[savedSource]) currentSource = savedSource;
 syncToggleState();
 syncStationTwoToggleState();
 syncAtlasToggleState();
-setStationTwoAdvancedSettingsOpen(false);
 requestAnimationFrame(async () => {
   document.body.classList.add("ready");
   renderIdleState();

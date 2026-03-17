@@ -12,6 +12,7 @@ const STATION_TWO_ACTIVE_URL = `${STATION_TWO_BASE_URL}/api/v1/subscriptions/act
 const STATION_TWO_MODELS_URL = `${STATION_TWO_BASE_URL}/api/v1/usage/dashboard/models`;
 const STATION_TWO_USAGE_URL = `${STATION_TWO_BASE_URL}/api/v1/usage`;
 const STATION_TWO_USAGE_STATS_URL = `${STATION_TWO_BASE_URL}/api/v1/usage/stats`;
+const STATION_TWO_KEYS_URL = `${STATION_TWO_BASE_URL}/api/v1/keys`;
 const STATION_THREE_BASE_URL = "https://9985678.xyz";
 const STATION_THREE_LOGIN_URL = `${STATION_THREE_BASE_URL}/api/user/login?turnstile=`;
 const STATION_THREE_SELF_URL = `${STATION_THREE_BASE_URL}/api/user/self`;
@@ -27,7 +28,8 @@ const STATION_TWO_USAGE_PAGE_SIZE = 10;
 const STATION_THREE_TIMEOUT_MS = 20000;
 const STATION_THREE_DEFAULT_QUOTA_PER_UNIT = 500000;
 const TOKEN_REFRESH_BUFFER_MS = 120000;
-const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
+// Hot-update entry (disabled for manual update workflow):
+// const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 const DASHBOARD_RANGE = "day";
 const DEFAULT_CONSUMPTION_PAGE = 1;
 const DEFAULT_CONSUMPTION_LIMIT = 10;
@@ -62,6 +64,11 @@ const stationThreeState = {
 let stationTwoProxyConfigured = null;
 let stationTwoUsageApiKeysCache = {
   dateKey: "",
+  items: [],
+  records: []
+};
+let stationTwoKeysCache = {
+  cacheKey: "",
   items: []
 };
 
@@ -402,6 +409,11 @@ function clearStationTwoSession({ clearCredentials = false } = {}) {
   stationTwoState.refreshSupported = null;
   stationTwoUsageApiKeysCache = {
     dateKey: "",
+    items: [],
+    records: []
+  };
+  stationTwoKeysCache = {
+    cacheKey: "",
     items: []
   };
   if (clearCredentials) {
@@ -576,13 +588,56 @@ function summarizeStationTwoItems(items) {
 }
 
 function normalizeStationTwoModelDistribution(items) {
-  const list = Array.isArray(items) ? items : [];
+  const list = Array.isArray(items)
+    ? items
+    : items && typeof items === "object"
+      ? Object.entries(items).map(([model, value]) => {
+        if (value && typeof value === "object") {
+          return {
+            ...value,
+            model: value.model ?? model
+          };
+        }
+        return {
+          model,
+          requests: value
+        };
+      })
+      : [];
+  const modelMap = new Map();
 
-  return list.map((item) => ({
-    model: String(item?.model || "").trim() || "—",
-    requests: item?.requests ?? 0,
-    cost: item?.actual_cost ?? item?.cost ?? null
-  }));
+  for (const item of list) {
+    const model = String(item?.model ?? item?.model_name ?? item?.name ?? "").trim() || "—";
+    const requests = Math.max(
+      0,
+      Number.isFinite(Number(item?.requests))
+        ? Number(item.requests)
+        : Number.isFinite(Number(item?.request_count))
+          ? Number(item.request_count)
+          : Number.isFinite(Number(item?.total_requests))
+            ? Number(item.total_requests)
+            : 0
+    );
+    const rawCost = [item?.actual_cost, item?.total_actual_cost, item?.cost, item?.total_cost]
+      .find((value) => Number.isFinite(Number(value)));
+    const cost = Number.isFinite(Number(rawCost)) ? Number(rawCost) : 0;
+    const current = modelMap.get(model) || {
+      model,
+      requests: 0,
+      cost: 0
+    };
+
+    current.requests += requests;
+    current.cost += cost;
+    modelMap.set(model, current);
+  }
+
+  return Array.from(modelMap.values())
+    .sort((left, right) => {
+      if (right.requests !== left.requests) return right.requests - left.requests;
+      if (right.cost !== left.cost) return right.cost - left.cost;
+      return left.model.localeCompare(right.model, "zh-CN");
+    });
 }
 
 function normalizeStationTwoUsageRecord(item) {
@@ -597,20 +652,58 @@ function normalizeStationTwoUsageRecord(item) {
   };
 }
 
+function buildStationTwoModelDistributionFromUsageRecords(records) {
+  const modelMap = new Map();
+
+  for (const record of Array.isArray(records) ? records : []) {
+    const model = String(record?.model || "").trim() || "—";
+    const cost = Number(record?.totalCost);
+    const current = modelMap.get(model) || {
+      model,
+      requests: 0,
+      cost: 0
+    };
+
+    current.requests += 1;
+    if (Number.isFinite(cost)) {
+      current.cost += cost;
+    }
+    modelMap.set(model, current);
+  }
+
+  return Array.from(modelMap.values())
+    .sort((left, right) => {
+      if (right.requests !== left.requests) return right.requests - left.requests;
+      if (right.cost !== left.cost) return right.cost - left.cost;
+      return left.model.localeCompare(right.model, "zh-CN");
+    });
+}
+
+function normalizeStationTwoApiKeyItem(item) {
+  const rawId = item?.apiKeyId
+    ?? item?.api_key_id
+    ?? item?.api_key?.id
+    ?? item?.id
+    ?? null;
+  const id = rawId !== null && rawId !== undefined ? String(rawId).trim() : "";
+  if (!id) return null;
+
+  return {
+    id,
+    name: String(item?.name || item?.api_key?.name || item?.apiKeyName || "").trim() || `API Key ${id}`
+  };
+}
+
 function buildStationTwoUsageApiKeys(records) {
   const map = new Map();
 
   for (const record of Array.isArray(records) ? records : []) {
-    const id = record?.apiKeyId !== null && record?.apiKeyId !== undefined
-      ? String(record.apiKeyId)
-      : "";
-    const key = id || record?.apiKeyName || "unknown";
+    const normalized = normalizeStationTwoApiKeyItem(record);
+    if (!normalized) continue;
+    const key = normalized.id;
     if (map.has(key)) continue;
 
-    map.set(key, {
-      id,
-      name: record?.apiKeyName || "未命名密钥"
-    });
+    map.set(key, normalized);
   }
 
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
@@ -1111,8 +1204,17 @@ async function fetchStationTwoModelDistribution(accessToken, proxyUrl = stationT
     }
   });
   const payload = unwrapStationTwoPayload(bodyText);
+  const modelItems = Array.isArray(payload?.models)
+    ? payload.models
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload)
+        ? payload
+        : payload?.models && typeof payload.models === "object"
+          ? payload.models
+          : [];
 
-  return normalizeStationTwoModelDistribution(payload?.models);
+  return normalizeStationTwoModelDistribution(modelItems);
 }
 
 async function fetchStationTwoUsageStats(accessToken, {
@@ -1205,13 +1307,13 @@ async function fetchStationTwoUsagePage(accessToken, {
   };
 }
 
-async function fetchStationTwoUsageApiKeys(accessToken, proxyUrl = stationTwoState.proxyUrl) {
+async function fetchStationTwoUsageRecordsForToday(accessToken, proxyUrl = stationTwoState.proxyUrl) {
   const timezone = getStationTwoTimezone();
   const today = getDateStringInTimeZone(new Date(), timezone);
   const cacheKey = `${today}::${timezone}`;
 
-  if (stationTwoUsageApiKeysCache.dateKey === cacheKey) {
-    return stationTwoUsageApiKeysCache.items;
+  if (stationTwoUsageApiKeysCache.dateKey === cacheKey && Array.isArray(stationTwoUsageApiKeysCache.records)) {
+    return stationTwoUsageApiKeysCache.records;
   }
 
   const pageSize = 100;
@@ -1239,17 +1341,108 @@ async function fetchStationTwoUsageApiKeys(accessToken, proxyUrl = stationTwoSta
     const payload = unwrapStationTwoPayload(bodyText);
     const items = Array.isArray(payload?.items) ? payload.items : [];
     records.push(...items.map(normalizeStationTwoUsageRecord));
-    totalPages = normalizePositiveInt(payload?.pages, 1);
+    const payloadPageSize = normalizePositiveInt(payload?.page_size, pageSize);
+    const payloadTotal = normalizeNonNegativeInt(payload?.total, records.length);
+    const payloadPages = normalizePositiveInt(payload?.pages, 0);
+    totalPages = payloadPages > 0
+      ? payloadPages
+      : Math.max(1, Math.ceil(Math.max(payloadTotal, records.length) / payloadPageSize));
     page += 1;
   }
 
+  const sortedRecords = records.sort((left, right) => {
+    const leftTime = new Date(left.createdAt || 0).getTime();
+    const rightTime = new Date(right.createdAt || 0).getTime();
+    return rightTime - leftTime;
+  });
+  const apiKeys = buildStationTwoUsageApiKeys(sortedRecords);
+  stationTwoUsageApiKeysCache = {
+    dateKey: cacheKey,
+    items: apiKeys,
+    records: sortedRecords
+  };
+
+  return sortedRecords;
+}
+
+async function fetchStationTwoUsageApiKeys(accessToken, proxyUrl = stationTwoState.proxyUrl) {
+  const timezone = getStationTwoTimezone();
+  const today = getDateStringInTimeZone(new Date(), timezone);
+  const cacheKey = `${today}::${timezone}`;
+
+  if (stationTwoUsageApiKeysCache.dateKey === cacheKey && Array.isArray(stationTwoUsageApiKeysCache.items)) {
+    return stationTwoUsageApiKeysCache.items;
+  }
+
+  const records = await fetchStationTwoUsageRecordsForToday(accessToken, proxyUrl);
   const apiKeys = buildStationTwoUsageApiKeys(records);
   stationTwoUsageApiKeysCache = {
     dateKey: cacheKey,
+    items: apiKeys,
+    records
+  };
+
+  return apiKeys;
+}
+
+async function fetchStationTwoApiKeys(accessToken, proxyUrl = stationTwoState.proxyUrl) {
+  const cacheKey = `${stationTwoState.email || ""}::${proxyUrl || ""}`;
+  if (stationTwoKeysCache.cacheKey === cacheKey && Array.isArray(stationTwoKeysCache.items)) {
+    return stationTwoKeysCache.items;
+  }
+
+  const pageSize = 100;
+  const keyMap = new Map();
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages) {
+    const query = `page=${normalizePositiveInt(page, 1)}&page_size=${normalizePositiveInt(pageSize, 100)}`;
+    const { bodyText } = await requestStationTwo(`${STATION_TWO_KEYS_URL}?${query}`, {
+      method: "GET",
+      proxyUrl,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Referer: `${STATION_TWO_BASE_URL}/keys`
+      }
+    });
+    const payload = unwrapStationTwoPayload(bodyText);
+    const items = Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload)
+        ? payload
+        : [];
+
+    for (const item of items) {
+      const normalized = normalizeStationTwoApiKeyItem(item);
+      if (!normalized) continue;
+      keyMap.set(normalized.id, normalized);
+    }
+
+    const payloadPageSize = normalizePositiveInt(payload?.page_size, pageSize);
+    const payloadTotal = normalizeNonNegativeInt(payload?.total, keyMap.size);
+    const payloadPages = normalizePositiveInt(payload?.pages, 0);
+    totalPages = payloadPages > 0
+      ? payloadPages
+      : payloadTotal > 0
+        ? Math.max(1, Math.ceil(payloadTotal / payloadPageSize))
+        : page;
+    page += 1;
+  }
+
+  const apiKeys = Array.from(keyMap.values())
+    .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+  stationTwoKeysCache = {
+    cacheKey,
     items: apiKeys
   };
 
   return apiKeys;
+}
+
+async function fetchStationTwoModelDistributionFromUsage(accessToken, proxyUrl = stationTwoState.proxyUrl) {
+  const records = await fetchStationTwoUsageRecordsForToday(accessToken, proxyUrl);
+  return buildStationTwoModelDistributionFromUsageRecords(records);
 }
 
 async function fetchStationTwoUsageBundle(accessToken, {
@@ -1258,19 +1451,44 @@ async function fetchStationTwoUsageBundle(accessToken, {
   pageSize = STATION_TWO_USAGE_PAGE_SIZE,
   apiKeyId = ""
 } = {}) {
-  const [usagePage, apiKeys] = await Promise.all([
-    fetchStationTwoUsagePage(accessToken, {
-      proxyUrl,
-      page,
-      pageSize,
-      apiKeyId
-    }),
-    fetchStationTwoUsageApiKeys(accessToken, proxyUrl)
-  ]);
+  const usagePagePromise = fetchStationTwoUsagePage(accessToken, {
+    proxyUrl,
+    page,
+    pageSize,
+    apiKeyId
+  });
+  const apiKeysPromise = fetchStationTwoApiKeys(accessToken, proxyUrl).catch(async (error) => {
+    const statusCode = Number(error?.statusCode || 0);
+    if (statusCode === 401 || statusCode === 403) {
+      throw error;
+    }
+
+    try {
+      return await fetchStationTwoUsageApiKeys(accessToken, proxyUrl);
+    } catch (fallbackError) {
+      const fallbackStatusCode = Number(fallbackError?.statusCode || 0);
+      if (fallbackStatusCode === 401 || fallbackStatusCode === 403) {
+        throw fallbackError;
+      }
+      return [];
+    }
+  });
+  const [usagePage, apiKeys] = await Promise.all([usagePagePromise, apiKeysPromise]);
+  const usageApiKeys = buildStationTwoUsageApiKeys(usagePage.records);
+  const mergedApiKeyMap = new Map();
+
+  for (const item of [...apiKeys, ...usageApiKeys]) {
+    const normalized = normalizeStationTwoApiKeyItem(item);
+    if (!normalized) continue;
+    if (!mergedApiKeyMap.has(normalized.id)) {
+      mergedApiKeyMap.set(normalized.id, normalized);
+    }
+  }
 
   return {
     records: usagePage.records,
-    apiKeys,
+    apiKeys: Array.from(mergedApiKeyMap.values())
+      .sort((left, right) => left.name.localeCompare(right.name, "zh-CN")),
     pagination: usagePage.pagination
   };
 }
@@ -1321,15 +1539,6 @@ async function fetchStationTwoDashboard({
       });
 
       try {
-        modelDistribution = await fetchStationTwoModelDistribution(accessToken, stationTwoState.proxyUrl);
-      } catch (error) {
-        const modelStatusCode = Number(error && error.statusCode ? error.statusCode : 0);
-        if (modelStatusCode === 401 || modelStatusCode === 403) {
-          throw error;
-        }
-      }
-
-      try {
         const usage = await fetchStationTwoUsageBundle(accessToken, {
           proxyUrl: stationTwoState.proxyUrl,
           page: usagePage,
@@ -1343,6 +1552,32 @@ async function fetchStationTwoDashboard({
         const usageStatusCode = Number(error && error.statusCode ? error.statusCode : 0);
         if (usageStatusCode === 401 || usageStatusCode === 403) {
           throw error;
+        }
+      }
+
+      try {
+        modelDistribution = await fetchStationTwoModelDistribution(accessToken, stationTwoState.proxyUrl);
+        if (modelDistribution.length <= 1) {
+          const currentPageFallback = buildStationTwoModelDistributionFromUsageRecords(usageRecords);
+          if (currentPageFallback.length > modelDistribution.length) {
+            modelDistribution = currentPageFallback;
+          } else {
+            const totalUsageCount = normalizeNonNegativeInt(usagePagination?.total, usageRecords.length);
+            if (totalUsageCount > usageRecords.length) {
+              const fullUsageFallback = await fetchStationTwoModelDistributionFromUsage(accessToken, stationTwoState.proxyUrl);
+              if (fullUsageFallback.length > modelDistribution.length) {
+                modelDistribution = fullUsageFallback;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        const modelStatusCode = Number(error && error.statusCode ? error.statusCode : 0);
+        if (modelStatusCode === 401 || modelStatusCode === 403) {
+          throw error;
+        }
+        if (usageRecords.length) {
+          modelDistribution = buildStationTwoModelDistributionFromUsageRecords(usageRecords);
         }
       }
 
@@ -1610,11 +1845,15 @@ async function createWindow() {
     backgroundColor: "#08111d"
   });
 
-  if (DEV_SERVER_URL) {
-    await win.loadURL(DEV_SERVER_URL);
-  } else {
-    await win.loadFile(path.join(__dirname, "renderer/index.html"));
-  }
+  // Hot-update loading path is intentionally commented out.
+  // To restore automatic hot update during development, uncomment below:
+  // if (DEV_SERVER_URL) {
+  //   await win.loadURL(DEV_SERVER_URL);
+  // } else {
+  //   await win.loadFile(path.join(__dirname, "renderer/index.html"));
+  // }
+
+  await win.loadFile(path.join(__dirname, "renderer/index.html"));
 
   win.show();
   win.focus();
