@@ -35,8 +35,7 @@ const STATION_THREE_DEFAULT_QUOTA_PER_UNIT = 500000;
 const STATION_THREE_LOG_FETCH_PAGE_SIZE = 100;
 const STATION_THREE_LOG_FETCH_MAX_PAGES = 30;
 const TOKEN_REFRESH_BUFFER_MS = 120000;
-// Hot-update entry (disabled for manual update workflow):
-// const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
+const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 const DASHBOARD_RANGE = "day";
 const DEFAULT_CONSUMPTION_PAGE = 1;
 const DEFAULT_CONSUMPTION_LIMIT = 10;
@@ -2409,15 +2408,11 @@ async function createMainWindow({ show = true } = {}) {
     }
   });
 
-  // Hot-update loading path is intentionally commented out.
-  // To restore automatic hot update during development, uncomment below:
-  // if (DEV_SERVER_URL) {
-  //   await win.loadURL(DEV_SERVER_URL);
-  // } else {
-  //   await win.loadFile(path.join(__dirname, "renderer/index.html"));
-  // }
-
-  await win.loadFile(path.join(__dirname, "renderer/index.html"));
+  if (DEV_SERVER_URL) {
+    await win.loadURL(DEV_SERVER_URL);
+  } else {
+    await win.loadFile(path.join(__dirname, "renderer/index.html"));
+  }
 
   if (show) {
     win.show();
@@ -2461,7 +2456,11 @@ async function createWidgetWindow() {
     widgetWin = null;
   });
 
-  await widgetWin.loadFile(path.join(__dirname, "renderer/widget.html"));
+  if (DEV_SERVER_URL) {
+    await widgetWin.loadURL(`${DEV_SERVER_URL.replace(/\/$/, "")}/widget.html`);
+  } else {
+    await widgetWin.loadFile(path.join(__dirname, "renderer/widget.html"));
+  }
   widgetWin.setAlwaysOnTop(true, "floating");
   widgetWin.show();
   widgetWin.focus();
