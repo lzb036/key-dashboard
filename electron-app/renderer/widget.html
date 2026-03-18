@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key Dashboard Widget</title>
+  <link rel="stylesheet" href="./widget.css">
+</head>
+<body>
+  <main class="widget-shell">
+    <header class="widget-head">
+      <div class="brand">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span class="brand-text">Key Dashboard</span>
+      </div>
+      <div class="head-actions">
+        <button id="pinBtn" class="control-btn no-drag" type="button" aria-pressed="true">置顶</button>
+        <button id="openBtn" class="control-btn no-drag" type="button">展开</button>
+        <button id="closeBtn" class="control-btn control-btn--close no-drag" type="button" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <nav class="source-tabs no-drag" aria-label="数据源">
+      <button class="source-tab is-active" type="button" data-source="cto">hxrra</button>
+      <button class="source-tab" type="button" data-source="nova">YesCode</button>
+      <button class="source-tab" type="button" data-source="atlas">998Code</button>
+    </nav>
+
+    <section class="hero">
+      <p id="heroKicker" class="hero-kicker">YesCode</p>
+      <p id="heroValue" class="hero-value">--</p>
+      <p id="heroSubline" class="hero-subline">点击刷新获取最新数据</p>
+    </section>
+
+    <section class="metric-grid">
+      <article class="metric-card">
+        <p id="metricALabel" class="metric-label">今日消耗</p>
+        <p id="metricAValue" class="metric-value">--</p>
+      </article>
+      <article class="metric-card">
+        <p id="metricBLabel" class="metric-label">月额度</p>
+        <p id="metricBValue" class="metric-value">--</p>
+      </article>
+    </section>
+
+    <footer class="widget-foot">
+      <div class="foot-meta">
+        <span id="statusText" class="status-text">就绪</span>
+        <span id="updatedAt" class="updated-at">未更新</span>
+      </div>
+      <button id="refreshBtn" class="refresh-btn no-drag" type="button">刷新</button>
+    </footer>
+  </main>
+
+  <script src="./widget.js"></script>
+</body>
+</html>

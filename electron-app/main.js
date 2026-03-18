@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 let win;
+let widgetWin;
 
 const DASHBOARD_URL = "https://cto.hxrra.com/api/public/dashboard";
 const STATION_TWO_BASE_URL = "https://api.yescode.cloud";
@@ -2322,13 +2323,22 @@ async function fetchStationThreeDashboard({
   throw new Error("998Code 请求失败");
 }
 
-async function createWindow() {
+async function createMainWindow({ show = true } = {}) {
+  if (win && !win.isDestroyed()) {
+    if (show) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+    return win;
+  }
+
   win = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 980,
     minHeight: 700,
-    show: true,
+    show: false,
     center: true,
     autoHideMenuBar: true,
     titleBarStyle: "hidden",
@@ -2345,6 +2355,14 @@ async function createWindow() {
     backgroundColor: "#08111d"
   });
 
+  win.on("closed", () => {
+    win = null;
+    if (widgetWin && !widgetWin.isDestroyed() && !widgetWin.isVisible()) {
+      widgetWin.show();
+      widgetWin.focus();
+    }
+  });
+
   // Hot-update loading path is intentionally commented out.
   // To restore automatic hot update during development, uncomment below:
   // if (DEV_SERVER_URL) {
@@ -2355,16 +2373,61 @@ async function createWindow() {
 
   await win.loadFile(path.join(__dirname, "renderer/index.html"));
 
-  win.show();
-  win.focus();
+  if (show) {
+    win.show();
+    win.focus();
+  }
+
+  return win;
+}
+
+async function createWidgetWindow() {
+  if (widgetWin && !widgetWin.isDestroyed()) {
+    if (widgetWin.isMinimized()) widgetWin.restore();
+    widgetWin.show();
+    widgetWin.focus();
+    return widgetWin;
+  }
+
+  widgetWin = new BrowserWindow({
+    width: 360,
+    height: 236,
+    minWidth: 320,
+    minHeight: 216,
+    show: false,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    backgroundColor: "#08111d"
+  });
+
+  widgetWin.on("closed", () => {
+    widgetWin = null;
+  });
+
+  await widgetWin.loadFile(path.join(__dirname, "renderer/widget.html"));
+  widgetWin.setAlwaysOnTop(true, "floating");
+  widgetWin.show();
+  widgetWin.focus();
+  return widgetWin;
 }
 
 app.whenReady().then(async () => {
-  await createWindow();
+  await createWidgetWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow().catch((error) => {
+      createWidgetWindow().catch((error) => {
         console.error("Failed to recreate window:", error);
       });
     }
@@ -2377,6 +2440,65 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("fetch-dashboard", (_event, { authorization, page, limit } = {}) => {
   return fetchDashboardWithRetry(authorization, { page, limit });
+});
+
+ipcMain.handle("open-main-dashboard", async () => {
+  await createMainWindow({ show: true });
+  if (widgetWin && !widgetWin.isDestroyed()) {
+    widgetWin.hide();
+  }
+  return true;
+});
+
+ipcMain.handle("minimize-main-to-widget", async (event) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+  if (sourceWindow && !sourceWindow.isDestroyed()) {
+    sourceWindow.hide();
+  }
+
+  await createWidgetWindow();
+  return true;
+});
+
+ipcMain.handle("get-widget-settings", (event) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!sourceWindow || sourceWindow.isDestroyed()) {
+    return {
+      alwaysOnTop: false
+    };
+  }
+
+  return {
+    alwaysOnTop: sourceWindow.isAlwaysOnTop()
+  };
+});
+
+ipcMain.handle("set-widget-always-on-top", (event, { alwaysOnTop } = {}) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+  const nextValue = Boolean(alwaysOnTop);
+
+  if (!sourceWindow || sourceWindow.isDestroyed()) {
+    return false;
+  }
+
+  if (nextValue) {
+    sourceWindow.setAlwaysOnTop(true, "floating");
+  } else {
+    sourceWindow.setAlwaysOnTop(false);
+  }
+  return sourceWindow.isAlwaysOnTop();
+});
+
+ipcMain.handle("close-widget", (event) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed() && !win.isVisible()) {
+    win.show();
+    win.focus();
+  }
+  if (sourceWindow && !sourceWindow.isDestroyed()) {
+    sourceWindow.close();
+  }
+  return true;
 });
 
 ipcMain.handle("fetch-station-two-dashboard", (_event, payload = {}) => {

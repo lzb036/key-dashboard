@@ -18,6 +18,7 @@ const RESOURCE_LINKS = {
 
 const els = {
   sourceSwitchText: document.getElementById("sourceSwitchText"),
+  minimizeToWidgetBtn: document.getElementById("minimizeToWidgetBtn"),
   balanceAmount: document.getElementById("balanceAmount"),
   totalConsumedAmount: document.getElementById("totalConsumedAmount"),
   totalRechargedAmount: document.getElementById("totalRechargedAmount"),
@@ -1453,6 +1454,17 @@ els.prevPageBtn.addEventListener("click", () => {
 });
 els.nextPageBtn.addEventListener("click", () => {
   if (!els.nextPageBtn.disabled) refresh(currentPage + 1);
+});
+
+els.minimizeToWidgetBtn?.addEventListener("click", async () => {
+  if (!window.api || typeof window.api.minimizeMainToWidget !== "function") {
+    return;
+  }
+  try {
+    await window.api.minimizeMainToWidget();
+  } catch {
+    // Ignore minimize bridge failures and keep the current window state.
+  }
 });
 
 els.stationTwoLoginBtn.addEventListener("click", loginStationTwo);

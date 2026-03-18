@@ -1,6 +1,16 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
+  openMainDashboard: () =>
+    ipcRenderer.invoke("open-main-dashboard"),
+  minimizeMainToWidget: () =>
+    ipcRenderer.invoke("minimize-main-to-widget"),
+  getWidgetSettings: () =>
+    ipcRenderer.invoke("get-widget-settings"),
+  setWidgetAlwaysOnTop: (alwaysOnTop) =>
+    ipcRenderer.invoke("set-widget-always-on-top", { alwaysOnTop }),
+  closeWidget: () =>
+    ipcRenderer.invoke("close-widget"),
   fetchDashboard: (authorization, options = {}) =>
     ipcRenderer.invoke("fetch-dashboard", { authorization, ...options }),
   fetchStationTwoDashboard: (options = {}) =>
