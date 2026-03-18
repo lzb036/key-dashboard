@@ -4,7 +4,7 @@
   "description": "API Key Dashboard",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "chcp 65001>nul && electron .",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite --config vite.config.js",
     "dev:electron": "wait-on tcp:127.0.0.1:5173 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 nodemon --watch . --ext js,cjs,mjs,json --ignore renderer/** --ignore node_modules/** --exec \"electron .\"",
