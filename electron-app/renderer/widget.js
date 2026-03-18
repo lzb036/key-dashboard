@@ -128,6 +128,20 @@ function setCardContent({
   }
 }
 
+function renderSourcePlaceholder(source, { subline = "暂无可用数据" } = {}) {
+  const sourceConfig = SOURCE_CONFIG[source] || SOURCE_CONFIG.nova;
+  setCardContent({
+    kicker: sourceConfig.title,
+    primaryLabel: sourceConfig.primaryLabel,
+    primaryValue: "--",
+    subline,
+    metricALabel: sourceConfig.metricALabel,
+    metricAValue: "--",
+    metricBLabel: sourceConfig.metricBLabel,
+    metricBValue: "--"
+  });
+}
+
 function normalizeSourceError(source, rawMessage) {
   const message = String(rawMessage || "").trim();
   if (!message) return "同步失败，请稍后重试";
@@ -260,7 +274,12 @@ async function refreshWidget({ silent = false } = {}) {
     setStatus("数据已同步", "success");
     els.updatedAt.textContent = formatTime(new Date());
   } catch (error) {
-    setStatus(normalizeSourceError(activeSource, error?.message), "error");
+    const userFacingMessage = normalizeSourceError(activeSource, error?.message);
+    renderSourcePlaceholder(activeSource, {
+      subline: "当前数据不可用，请稍后重试"
+    });
+    els.updatedAt.textContent = formatTime(null);
+    setStatus(userFacingMessage, "error");
   } finally {
     setLoading(false);
   }
@@ -319,6 +338,10 @@ els.sourceTabs.forEach((button) => {
     const source = button.dataset.source;
     if (!source || source === activeSource) return;
     setSource(source);
+    renderSourcePlaceholder(source, {
+      subline: "正在同步数据..."
+    });
+    els.updatedAt.textContent = formatTime(null);
     void refreshWidget();
   });
 });

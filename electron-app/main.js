@@ -89,6 +89,16 @@ function getStationThreePreferencesPath() {
   return path.join(app.getPath("userData"), STATION_THREE_PREFS_FILENAME);
 }
 
+function removeFileIfExists(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch {
+    // Ignore file cleanup failures.
+  }
+}
+
 function encodeStationTwoSecret(value) {
   const text = String(value || "");
   if (!text) return null;
@@ -451,6 +461,28 @@ async function clearStationThreeSessionStorage() {
     await targetSession.closeAllConnections();
   } catch {
     // Ignore stale pooled connections after clearing cookies.
+  }
+}
+
+async function clearSessionStorage(targetSession) {
+  if (!targetSession) return;
+
+  try {
+    await targetSession.clearStorageData();
+  } catch {
+    // Ignore storage cleanup failures.
+  }
+
+  try {
+    await targetSession.clearAuthCache();
+  } catch {
+    // Ignore auth cache cleanup failures.
+  }
+
+  try {
+    await targetSession.closeAllConnections();
+  } catch {
+    // Ignore stale pooled connections after cleanup.
   }
 }
 
@@ -2451,6 +2483,27 @@ async function confirmExitApplication(parentWindow = null) {
   return result.response === 0;
 }
 
+async function clearAllStoredData() {
+  clearStationTwoSession({ clearCredentials: true });
+  clearStationThreeSession({ clearCredentials: true });
+  stationTwoProxyConfigured = null;
+
+  removeFileIfExists(getStationTwoPreferencesPath());
+  removeFileIfExists(getStationThreePreferencesPath());
+
+  const targets = new Set([
+    session.defaultSession,
+    getStationTwoSessionPartition(),
+    getStationThreeSessionPartition()
+  ]);
+
+  for (const targetSession of targets) {
+    await clearSessionStorage(targetSession);
+  }
+
+  return true;
+}
+
 app.whenReady().then(async () => {
   await createWidgetWindow();
 
@@ -2497,6 +2550,10 @@ ipcMain.handle("confirm-exit-app", async (event) => {
     app.quit();
   }
   return confirmed;
+});
+
+ipcMain.handle("clear-all-stored-data", async () => {
+  return clearAllStoredData();
 });
 
 ipcMain.handle("get-widget-settings", (event) => {

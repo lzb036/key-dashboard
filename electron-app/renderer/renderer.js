@@ -18,6 +18,7 @@ const RESOURCE_LINKS = {
 
 const els = {
   sourceSwitchText: document.getElementById("sourceSwitchText"),
+  openSettingsBtn: document.getElementById("openSettingsBtn"),
   minimizeToWidgetBtn: document.getElementById("minimizeToWidgetBtn"),
   exitAppBtn: document.getElementById("exitAppBtn"),
   balanceAmount: document.getElementById("balanceAmount"),
@@ -94,6 +95,11 @@ const els = {
   linkModalCloseBtn: document.getElementById("linkModalCloseBtn"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
   copyLinkStatus: document.getElementById("copyLinkStatus"),
+  settingsModal: document.getElementById("settingsModal"),
+  settingsModalBackdrop: document.getElementById("settingsModalBackdrop"),
+  settingsModalCloseBtn: document.getElementById("settingsModalCloseBtn"),
+  clearAllCacheBtn: document.getElementById("clearAllCacheBtn"),
+  clearAllCacheStatus: document.getElementById("clearAllCacheStatus"),
   srAnnounce: document.getElementById("srAnnounce"),
   sourceTabs: Array.from(document.querySelectorAll("[data-source-tab]")),
   sourceViews: Array.from(document.querySelectorAll("[data-source-view]"))
@@ -109,6 +115,7 @@ let lastSubmittedKey = "";
 let activeResourceKey = "";
 let copyStatusTimer = null;
 let currentSource = "cto";
+let clearAllCacheBusy = false;
 let stationTwoHasSnapshot = false;
 let stationTwoLoading = false;
 let stationTwoUsageLoading = false;
@@ -429,7 +436,9 @@ function resetCopyButton() {
 function closeLinkModal() {
   activeResourceKey = "";
   els.linkModal.hidden = true;
-  document.body.classList.remove("modal-open");
+  if (els.settingsModal.hidden) {
+    document.body.classList.remove("modal-open");
+  }
   resetCopyButton();
   setCopyStatus("");
 }
@@ -437,6 +446,9 @@ function closeLinkModal() {
 function openLinkModal(resourceKey) {
   const resource = RESOURCE_LINKS[resourceKey];
   if (!resource) return;
+  if (!els.settingsModal.hidden) {
+    closeSettingsModal();
+  }
   activeResourceKey = resourceKey;
   els.linkModalTitle.textContent = resource.title;
   els.linkModalUrl.textContent = resource.url;
@@ -444,6 +456,65 @@ function openLinkModal(resourceKey) {
   els.linkModal.hidden = false;
   document.body.classList.add("modal-open");
   setCopyStatus("");
+}
+
+function setClearAllCacheStatus(text = "") {
+  if (!els.clearAllCacheStatus) return;
+  els.clearAllCacheStatus.textContent = text;
+}
+
+function openSettingsModal() {
+  if (!els.linkModal.hidden) {
+    closeLinkModal();
+  }
+  setClearAllCacheStatus("");
+  els.settingsModal.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+function closeSettingsModal() {
+  if (!els.settingsModal) return;
+  els.settingsModal.hidden = true;
+  if (els.linkModal.hidden) {
+    document.body.classList.remove("modal-open");
+  }
+  setClearAllCacheStatus("");
+}
+
+async function clearAllCacheData() {
+  if (clearAllCacheBusy) return;
+  if (!window.api || typeof window.api.clearAllStoredData !== "function") {
+    setClearAllCacheStatus("当前版本不支持清除缓存");
+    return;
+  }
+
+  clearAllCacheBusy = true;
+  els.clearAllCacheBtn.disabled = true;
+  els.clearAllCacheBtn.textContent = "清除中...";
+  setClearAllCacheStatus("正在清除，请稍候...");
+
+  try {
+    await window.api.clearAllStoredData();
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // Ignore renderer storage cleanup failures.
+    }
+    setClearAllCacheStatus("清除完成，正在刷新页面...");
+    setMsg("所有本地缓存已清除", "success");
+    setStationTwoMessage("缓存已清除，请重新登录", "success");
+    setAtlasMessage("缓存已清除，请重新登录", "success");
+    setTimeout(() => {
+      window.location.reload();
+    }, 650);
+  } catch {
+    setClearAllCacheStatus("清除失败，请稍后重试");
+  } finally {
+    clearAllCacheBusy = false;
+    els.clearAllCacheBtn.disabled = false;
+    els.clearAllCacheBtn.textContent = "清除所有缓存";
+  }
 }
 
 async function copyActiveLink() {
@@ -1480,6 +1551,8 @@ els.exitAppBtn?.addEventListener("click", async () => {
   }
 });
 
+els.openSettingsBtn?.addEventListener("click", openSettingsModal);
+
 els.stationTwoLoginBtn.addEventListener("click", loginStationTwo);
 els.stationTwoRefreshBtn.addEventListener("click", refreshStationTwoDashboard);
 els.stationTwoReloginBtn.addEventListener("click", reloginStationTwo);
@@ -1508,9 +1581,16 @@ els.viewGuideBtn.addEventListener("click", () => openLinkModal("guide"));
 els.linkModalBackdrop.addEventListener("click", closeLinkModal);
 els.linkModalCloseBtn.addEventListener("click", closeLinkModal);
 els.copyLinkBtn.addEventListener("click", copyActiveLink);
+els.settingsModalBackdrop?.addEventListener("click", closeSettingsModal);
+els.settingsModalCloseBtn?.addEventListener("click", closeSettingsModal);
+els.clearAllCacheBtn?.addEventListener("click", () => {
+  void clearAllCacheData();
+});
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !els.linkModal.hidden) closeLinkModal();
+  if (event.key !== "Escape") return;
+  if (!els.linkModal.hidden) closeLinkModal();
+  if (!els.settingsModal.hidden) closeSettingsModal();
 });
 
 document.querySelectorAll(".interactive-panel").forEach(attachPointerGlow);

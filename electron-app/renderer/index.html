@@ -23,6 +23,7 @@
         </div>
 
         <div class="titlebar-controls">
+          <button id="openSettingsBtn" class="titlebar-control-btn" type="button" aria-label="打开设置">设置</button>
           <button id="minimizeToWidgetBtn" class="titlebar-control-btn" type="button" aria-label="缩小到小组件">缩小</button>
           <button id="exitAppBtn" class="titlebar-control-btn titlebar-control-btn--danger" type="button" aria-label="退出应用">退出</button>
         </div>
@@ -482,6 +483,27 @@
       <div class="link-modal-actions">
         <button id="copyLinkBtn" class="link-modal-copy-btn" type="button">复制链接</button>
         <span id="copyLinkStatus" class="link-modal-status" aria-live="polite"></span>
+      </div>
+    </section>
+  </div>
+
+  <div id="settingsModal" class="link-modal" hidden>
+    <div id="settingsModalBackdrop" class="link-modal-backdrop"></div>
+    <section class="link-modal-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+      <button id="settingsModalCloseBtn" class="link-modal-close" type="button" aria-label="关闭设置弹窗">关闭</button>
+      <span class="panel-chip">Settings</span>
+      <h2 id="settingsModalTitle" class="link-modal-title">应用设置</h2>
+      <p class="link-modal-copy">你可以在这里管理本地缓存与账号会话。</p>
+      <div class="settings-item">
+        <div class="settings-item-copy">
+          <h3 class="settings-item-title">清除所有缓存数据</h3>
+          <p class="settings-item-text">会清除 API Key、账号密码、代理、自动登录偏好、会话缓存和本地存储信息。</p>
+          <p class="settings-item-text settings-item-text--warn">此操作不可撤销，清除后需要重新登录并重新填写信息。</p>
+        </div>
+        <div class="settings-item-actions">
+          <button id="clearAllCacheBtn" class="link-modal-copy-btn settings-danger-btn" type="button">清除所有缓存</button>
+          <span id="clearAllCacheStatus" class="link-modal-status" aria-live="polite"></span>
+        </div>
       </div>
     </section>
   </div>
