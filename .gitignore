@@ -36,5 +36,6 @@ pnpm-debug.log*
 Thumbs.db
 
 # Temporary files
+.cache/
 *.tmp
 *.temp
