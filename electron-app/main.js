@@ -23,7 +23,7 @@ const STATION_THREE_SUBSCRIPTION_PLANS_URL = `${STATION_THREE_BASE_URL}/api/subs
 const STATION_THREE_LOG_SELF_URL = `${STATION_THREE_BASE_URL}/api/log/self/`;
 const STATION_TWO_SESSION_PARTITION = "persist:key-dashboard-station-two";
 const STATION_THREE_SESSION_PARTITION = "persist:key-dashboard-station-three";
-const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
+const STATION_TWO_DEFAULT_PROXY = "";
 const STATION_TWO_PREFS_FILENAME = "station-two-auth.json";
 const STATION_THREE_PREFS_FILENAME = "station-three-auth.json";
 const STATION_TWO_TIMEOUT_MS = 20000;
@@ -155,7 +155,7 @@ function readStationTwoPreferences() {
     return {
       email: rememberPassword ? String(parsed.email || "").trim() : "",
       password: rememberPassword ? decodeStationTwoSecret(parsed.password) : "",
-      proxyUrl: typeof parsed.proxyUrl === "string" ? parsed.proxyUrl.trim() || STATION_TWO_DEFAULT_PROXY : STATION_TWO_DEFAULT_PROXY,
+      proxyUrl: typeof parsed.proxyUrl === "string" ? parsed.proxyUrl.trim() : STATION_TWO_DEFAULT_PROXY,
       rememberPassword,
       autoLogin: rememberPassword && Boolean(parsed.autoLogin)
     };
@@ -167,10 +167,11 @@ function readStationTwoPreferences() {
 function writeStationTwoPreferences({ email, password, proxyUrl, rememberPassword, autoLogin } = {}) {
   const filePath = getStationTwoPreferencesPath();
   const resolvedRemember = Boolean(rememberPassword);
+  const normalizedProxy = typeof proxyUrl === "string" ? proxyUrl.trim() : STATION_TWO_DEFAULT_PROXY;
   const payload = {
     email: resolvedRemember ? String(email || "").trim() : "",
     password: resolvedRemember ? encodeStationTwoSecret(password) : null,
-    proxyUrl: typeof proxyUrl === "string" ? proxyUrl.trim() : STATION_TWO_DEFAULT_PROXY,
+    proxyUrl: normalizedProxy,
     rememberPassword: resolvedRemember,
     autoLogin: resolvedRemember && Boolean(autoLogin)
   };

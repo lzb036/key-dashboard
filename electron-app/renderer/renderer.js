@@ -1,9 +1,8 @@
 const STORAGE_KEY = "cto_dashboard_key";
 const SOURCE_STORAGE_KEY = "cto_dashboard_source";
 const STATION_TWO_EMAIL_KEY = "station_two_email";
-const STATION_TWO_PROXY_KEY = "station_two_proxy";
 const ATLAS_USERNAME_KEY = "atlas_username";
-const STATION_TWO_DEFAULT_PROXY = "http://127.0.0.1:7890";
+const STATION_TWO_DEFAULT_PROXY = "";
 const PAGE_LIMIT = 10;
 const STATION_TWO_USAGE_PAGE_SIZE = 10;
 const ATLAS_USAGE_LOG_PAGE_SIZE = 20;
@@ -1064,7 +1063,7 @@ async function loginStationTwo() {
   const payload = {
     email: els.stationTwoEmailInput.value.trim(),
     password: els.stationTwoPasswordInput.value,
-    proxyUrl: els.stationTwoProxyInput.value.trim()
+    proxyUrl: els.stationTwoProxyInput.value.trim() || STATION_TWO_DEFAULT_PROXY
   };
   if (!payload.email || !payload.password) {
     setStationTwoMessage("请输入邮箱和密码", "error");
@@ -1091,7 +1090,6 @@ async function loginStationTwo() {
       localStorage.setItem(STATION_TWO_EMAIL_KEY, emailToStore);
       if (!els.stationTwoEmailInput.value.trim()) els.stationTwoEmailInput.value = emailToStore;
     }
-    localStorage.setItem(STATION_TWO_PROXY_KEY, payload.proxyUrl);
     await persistStationTwoPreferences({
       passwordOverride: payload.password
     });
@@ -1112,7 +1110,7 @@ async function refreshStationTwoDashboard() {
   try {
     const data = await window.api.fetchStationTwoDashboard({
       email: els.stationTwoEmailInput.value.trim(),
-      proxyUrl: els.stationTwoProxyInput.value.trim(),
+      proxyUrl: els.stationTwoProxyInput.value.trim() || STATION_TWO_DEFAULT_PROXY,
       allowLogin: false,
       usagePage: stationTwoUsagePage,
       usagePageSize: stationTwoUsagePageSize,
@@ -1150,7 +1148,7 @@ async function refreshStationTwoUsagePage(targetPage = stationTwoUsagePage) {
   try {
     const data = await window.api.fetchStationTwoUsage({
       email: els.stationTwoEmailInput.value.trim(),
-      proxyUrl: els.stationTwoProxyInput.value.trim(),
+      proxyUrl: els.stationTwoProxyInput.value.trim() || STATION_TWO_DEFAULT_PROXY,
       allowLogin: false,
       page: stationTwoUsagePage,
       pageSize: stationTwoUsagePageSize,
@@ -1305,14 +1303,11 @@ async function initializeStationTwoPreferences() {
   }
 
   const legacyEmail = localStorage.getItem(STATION_TWO_EMAIL_KEY) || "";
-  const legacyProxy = localStorage.getItem(STATION_TWO_PROXY_KEY);
   const resolvedEmail = String(preferences?.email || legacyEmail || "").trim();
   const resolvedPassword = String(preferences?.password || "");
   const resolvedProxy = typeof preferences?.proxyUrl === "string"
-    ? preferences.proxyUrl.trim() || STATION_TWO_DEFAULT_PROXY
-    : legacyProxy !== null
-      ? legacyProxy
-      : STATION_TWO_DEFAULT_PROXY;
+    ? preferences.proxyUrl.trim()
+    : STATION_TWO_DEFAULT_PROXY;
 
   els.stationTwoEmailInput.value = resolvedEmail;
   els.stationTwoPasswordInput.value = resolvedPassword;
@@ -1397,6 +1392,10 @@ els.stationTwoAutoLoginToggle.addEventListener("change", async () => {
     stationTwoAutoLoginAttempted = false;
   }
   syncStationTwoPreferenceState();
+  await persistStationTwoPreferences();
+});
+
+els.stationTwoProxyInput.addEventListener("change", async () => {
   await persistStationTwoPreferences();
 });
 

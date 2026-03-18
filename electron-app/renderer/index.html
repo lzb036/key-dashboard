@@ -156,7 +156,20 @@
               </div>
             </label>
 
-            <input id="stationTwoProxyInput" type="hidden" value="http://127.0.0.1:7890">
+            <label class="stacked-field" for="stationTwoProxyInput">
+              <span class="field-label">代理（可选）</span>
+              <div class="input-shell">
+                <span class="input-icon" aria-hidden="true"></span>
+                <input
+                  id="stationTwoProxyInput"
+                  type="text"
+                  value=""
+                  placeholder="例如 http://127.0.0.1:7897 或 socks5://127.0.0.1:1080"
+                  autocomplete="off"
+                  spellcheck="false"
+                >
+              </div>
+            </label>
 
             <div class="station-two-auth-options" aria-label="登录偏好">
               <label class="station-two-option-chip" for="stationTwoRememberToggle">
