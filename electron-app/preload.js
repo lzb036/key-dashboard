@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("open-main-dashboard"),
   minimizeMainToWidget: () =>
     ipcRenderer.invoke("minimize-main-to-widget"),
+  confirmExitApp: () =>
+    ipcRenderer.invoke("confirm-exit-app"),
   getWidgetSettings: () =>
     ipcRenderer.invoke("get-widget-settings"),
   setWidgetAlwaysOnTop: (alwaysOnTop) =>

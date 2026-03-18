@@ -19,6 +19,7 @@ const RESOURCE_LINKS = {
 const els = {
   sourceSwitchText: document.getElementById("sourceSwitchText"),
   minimizeToWidgetBtn: document.getElementById("minimizeToWidgetBtn"),
+  exitAppBtn: document.getElementById("exitAppBtn"),
   balanceAmount: document.getElementById("balanceAmount"),
   totalConsumedAmount: document.getElementById("totalConsumedAmount"),
   totalRechargedAmount: document.getElementById("totalRechargedAmount"),
@@ -1464,6 +1465,18 @@ els.minimizeToWidgetBtn?.addEventListener("click", async () => {
     await window.api.minimizeMainToWidget();
   } catch {
     // Ignore minimize bridge failures and keep the current window state.
+  }
+});
+
+els.exitAppBtn?.addEventListener("click", async () => {
+  if (!window.api || typeof window.api.confirmExitApp !== "function") {
+    return;
+  }
+
+  try {
+    await window.api.confirmExitApp();
+  } catch {
+    // Ignore exit bridge failures and keep app running.
   }
 });
 

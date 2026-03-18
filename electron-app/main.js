@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, net, clipboard, session, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, net, clipboard, session, safeStorage, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
 let win;
 let widgetWin;
+let isAppQuitting = false;
 
 const DASHBOARD_URL = "https://cto.hxrra.com/api/public/dashboard";
 const STATION_TWO_BASE_URL = "https://api.yescode.cloud";
@@ -2355,6 +2356,19 @@ async function createMainWindow({ show = true } = {}) {
     backgroundColor: "#08111d"
   });
 
+  win.on("close", (event) => {
+    if (isAppQuitting) return;
+
+    event.preventDefault();
+    confirmExitApplication(win).then((confirmed) => {
+      if (!confirmed) return;
+      isAppQuitting = true;
+      app.quit();
+    }).catch(() => {
+      // Ignore close-confirmation failures and keep app running.
+    });
+  });
+
   win.on("closed", () => {
     win = null;
     if (widgetWin && !widgetWin.isDestroyed() && !widgetWin.isVisible()) {
@@ -2422,6 +2436,21 @@ async function createWidgetWindow() {
   return widgetWin;
 }
 
+async function confirmExitApplication(parentWindow = null) {
+  const result = await dialog.showMessageBox(parentWindow || null, {
+    type: "question",
+    title: "退出应用",
+    message: "确定要退出 Key Dashboard 吗？",
+    detail: "退出后将关闭主界面和小组件。",
+    buttons: ["退出应用", "取消"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  });
+
+  return result.response === 0;
+}
+
 app.whenReady().then(async () => {
   await createWidgetWindow();
 
@@ -2458,6 +2487,16 @@ ipcMain.handle("minimize-main-to-widget", async (event) => {
 
   await createWidgetWindow();
   return true;
+});
+
+ipcMain.handle("confirm-exit-app", async (event) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+  const confirmed = await confirmExitApplication(sourceWindow || win || widgetWin || null);
+  if (confirmed) {
+    isAppQuitting = true;
+    app.quit();
+  }
+  return confirmed;
 });
 
 ipcMain.handle("get-widget-settings", (event) => {

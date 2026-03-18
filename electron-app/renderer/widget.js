@@ -36,8 +36,7 @@ const els = {
   updatedAt: document.getElementById("updatedAt"),
   refreshBtn: document.getElementById("refreshBtn"),
   pinBtn: document.getElementById("pinBtn"),
-  openBtn: document.getElementById("openBtn"),
-  closeBtn: document.getElementById("closeBtn")
+  openBtn: document.getElementById("openBtn")
 };
 
 let activeSource = "cto";
@@ -337,14 +336,6 @@ els.openBtn.addEventListener("click", async () => {
     await window.api.openMainDashboard();
   } catch {
     setStatus("打开完整面板失败", "error");
-  }
-});
-
-els.closeBtn.addEventListener("click", async () => {
-  try {
-    await window.api.closeWidget();
-  } catch {
-    window.close();
   }
 });
 

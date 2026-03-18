@@ -202,6 +202,17 @@ button {
   background: rgba(34, 53, 82, 0.78);
 }
 
+.titlebar-control-btn--danger {
+  border-color: rgba(255, 113, 133, 0.3);
+  color: rgba(255, 180, 190, 0.95);
+}
+
+.titlebar-control-btn--danger:hover {
+  border-color: rgba(255, 113, 133, 0.52);
+  color: #ffe8ec;
+  background: rgba(110, 33, 49, 0.82);
+}
+
 .titlebar-sources {
   display: flex;
   align-items: center;
